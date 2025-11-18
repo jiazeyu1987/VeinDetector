@@ -240,8 +240,9 @@ export const MainLayout: React.FC = () => {
                 className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
               >
                 <option value="smp_unet_resnet34">
-                  SMP U-Net (ResNet34, ImageNet encoder)
+                  深度模型 · SMP U-Net (ResNet34)
                 </option>
+                <option value="cv">传统 CV 分割 (OpenCV)</option>
               </select>
             </div>
             <button

@@ -3,6 +3,7 @@ import logging
 from io import BytesIO
 from typing import Tuple
 
+import cv2
 import numpy as np
 from PIL import Image
 import torch
@@ -185,5 +186,57 @@ class SamusVeinSegmentor:
 
         full_mask = np.zeros((height, width), dtype=np.uint8)
         full_mask[y1 : y1 + roi_h, x1 : x1 + roi_w] = roi_mask
+
+        return full_mask
+
+
+class CVVeinSegmentor:
+    """
+    使用传统 OpenCV 图像处理完成静脉分割：
+    - 在 ROI 内进行灰度化、对比度增强、平滑；
+    - 使用 Otsu 自适应阈值生成二值图；
+    - 进行形态学闭运算与开运算去噪；
+    - 返回与输入图像同尺寸的 0/1 mask。
+    """
+
+    def segment(self, image: np.ndarray, roi: ROIRegion) -> np.ndarray:
+        if image.ndim == 2:
+            height, width = image.shape
+            gray = image
+        else:
+            height, width = image.shape[:2]
+            # decode_image_from_data_url 返回的是 RGB，这里按 RGB 转灰度
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        x1 = max(0, int(roi.x))
+        y1 = max(0, int(roi.y))
+        x2 = min(width, x1 + int(roi.width))
+        y2 = min(height, y1 + int(roi.height))
+
+        if x2 <= x1 or y2 <= y1:
+            logger.warning("Invalid ROI for CV segmentation, return empty mask")
+            return np.zeros((height, width), dtype=np.uint8)
+
+        roi_img = gray[y1:y2, x1:x2]
+
+        # 预处理：高斯模糊 + CLAHE 提升静脉对比度
+        blurred = cv2.GaussianBlur(roi_img, (5, 5), 0)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        enhanced = clahe.apply(blurred)
+
+        # Otsu 自适应阈值，反色使静脉为白色（1），背景为黑色（0）
+        _, thresh = cv2.threshold(
+            enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
+
+        # 形态学操作：闭运算填补静脉内部小空洞，再开运算去除小噪声
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
+        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=1)
+
+        roi_mask = (opened > 0).astype(np.uint8)
+
+        full_mask = np.zeros((height, width), dtype=np.uint8)
+        full_mask[y1:y2, x1:x2] = roi_mask
 
         return full_mask
