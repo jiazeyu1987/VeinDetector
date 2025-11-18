@@ -4,14 +4,7 @@ import { VideoPlayer } from './VideoPlayer';
 import { ROIEditor } from './ROIEditor';
 import { VeinVisualization } from './VeinVisualization';
 import { apiClient, mockApi } from '../api/client';
-import {
-  VideoInfo,
-  ROI,
-  VeinDetectionResult,
-  AnalysisRequest,
-  AnalysisResponse,
-  JobStatus,
-} from '../api/types';
+import { VideoInfo, ROI, VeinDetectionResult } from '../api/types';
 
 export const MainLayout: React.FC = () => {
   const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
@@ -22,9 +15,12 @@ export const MainLayout: React.FC = () => {
   const [currentDetection, setCurrentDetection] = useState<VeinDetectionResult | undefined>();
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [analysisJob, setAnalysisJob] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [segmentationMask, setSegmentationMask] = useState<number[][] | null>(null);
+  const [showSegmentationOverlay, setShowSegmentationOverlay] = useState(true);
+  // 当前实际使用的是 segmentation_models_pytorch 提供的 U-Net (ResNet34, ImageNet encoder)
+  const [segmentationModel, setSegmentationModel] = useState('smp_unet_resnet34');
   const previewUrlRef = useRef<string | null>(null);
   const revokeBlobUrl = useCallback((url?: string | null) => {
     if (url && url.startsWith('blob:')) {
@@ -42,6 +38,7 @@ export const MainLayout: React.FC = () => {
   const [isResizing, setIsResizing] = useState(false);
   const [frameStep, setFrameStep] = useState(1);
   const [showROIOverlay, setShowROIOverlay] = useState(true);
+  const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const displayedTotalFrames = currentVideo ? Math.max(1, Math.floor(currentVideo.frameCount / frameStep)) : 0;
   const timeAxisProgress =
     displayedTotalFrames > 1 ? (currentFrame / (displayedTotalFrames - 1)) * 100 : 0;
@@ -96,70 +93,44 @@ export const MainLayout: React.FC = () => {
     };
   }, [revokeBlobUrl]);
 
+  // 当前简单分割逻辑不依赖历史检测结果
+  useEffect(() => {
+    setCurrentDetection(undefined);
+  }, [currentFrame]);
+
   const startAnalysis = useCallback(async () => {
     if (!currentVideo || !currentROI) {
       setError('请先选择视频和ROI区域');
+      return;
+    }
+    if (!frameCanvasRef.current) {
+      setError('当前帧画布尚未准备好，请稍后重试');
       return;
     }
     try {
       setIsAnalyzing(true);
       setAnalysisProgress(0);
       setError(null);
-      const request: AnalysisRequest = {
-        videoId: currentVideo.id,
+      const canvas = frameCanvasRef.current;
+      const imageDataUrl = canvas.toDataURL('image/png');
+      const response = await apiClient.segmentCurrentFrame({
+        imageDataUrl,
         roi: currentROI,
-        parameters: {
-          threshold: confidenceThreshold,
-          minVeinSize: 10,
-          maxVeinSize: 100,
-        },
-      };
-      const response = await mockApi.startAnalysis(request);
+        modelName: segmentationModel,
+      });
       if (response.success && response.data) {
-        setAnalysisJob(response.data.jobId);
-        const progressInterval = setInterval(async () => {
-          setAnalysisProgress(prev => {
-            const newProgress = Math.min(prev + 10, 100);
-            if (newProgress >= 100) {
-              clearInterval(progressInterval);
-              if (response.data?.jobId) {
-                fetchAnalysisResults(response.data.jobId);
-              }
-            }
-            return newProgress;
-          });
-        }, 500);
+        setSegmentationMask(response.data.mask);
+        setIsAnalyzing(false);
+        setAnalysisProgress(100);
       } else {
-        setError(response.error || '分析启动失败');
+        setError(response.error || response.message || '分析启动失败');
         setIsAnalyzing(false);
       }
     } catch (err) {
       setError('分析失败: ' + (err as Error).message);
       setIsAnalyzing(false);
     }
-  }, [currentVideo, currentROI, confidenceThreshold]);
-
-  const fetchAnalysisResults = useCallback(async (jobId: string) => {
-    try {
-      const response = await mockApi.getAnalysisResults(jobId);
-      if (response.success && response.data) {
-        setDetectionResults(response.data);
-        setIsAnalyzing(false);
-        setAnalysisProgress(100);
-      } else {
-        setError(response.error || '获取分析结果失败');
-        setIsAnalyzing(false);
-      }
-    } catch (err) {
-      setError('获取分析结果失败: ' + (err as Error).message);
-      setIsAnalyzing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const result = detectionResults.find(r => r.frameIndex === currentFrame);
-    setCurrentDetection(result);
-  }, [currentFrame, detectionResults]);
+  }, [currentVideo, currentROI, segmentationModel]);
 
   const handleMouseDown = useCallback(() => {
     setIsResizing(true);
@@ -261,6 +232,18 @@ export const MainLayout: React.FC = () => {
                 className="hidden"
               />
             </label>
+            <div className="flex items-center space-x-2 text-sm text-gray-200 mr-2">
+              <span>分割模型:</span>
+              <select
+                value={segmentationModel}
+                onChange={e => setSegmentationModel(e.target.value)}
+                className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
+              >
+                <option value="smp_unet_resnet34">
+                  SMP U-Net (ResNet34, ImageNet encoder)
+                </option>
+              </select>
+            </div>
             <button
               onClick={startAnalysis}
               disabled={!currentVideo || !currentROI || isAnalyzing}
@@ -268,6 +251,13 @@ export const MainLayout: React.FC = () => {
             >
               <BarChart3 size={16} />
               <span>{isAnalyzing ? `分析中... ${analysisProgress}%` : '开始分析'}</span>
+            </button>
+            <button
+              onClick={() => setShowSegmentationOverlay(prev => !prev)}
+              disabled={!segmentationMask}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded flex items-center space-x-2 transition-colors"
+            >
+              <span>{showSegmentationOverlay ? '隐藏分割结果' : '显示分割结果'}</span>
             </button>
             <button className="p-2 bg-gray-600 hover:bg-gray-500 rounded transition-colors">
               <Settings size={16} />
@@ -348,6 +338,9 @@ export const MainLayout: React.FC = () => {
                     width={800}
                     height={600}
                     className="w-full h-full"
+                    onCanvasRef={canvas => {
+                      frameCanvasRef.current = canvas;
+                    }}
                   />
                   <div className="absolute inset-0">
                     <ROIEditor
@@ -358,6 +351,30 @@ export const MainLayout: React.FC = () => {
                       onROIClear={() => setCurrentROI(null)}
                       className="w-full h-full"
                     />
+                    {segmentationMask && showSegmentationOverlay && (
+                      <canvas
+                        className="absolute inset-0 pointer-events-none"
+                        ref={canvas => {
+                          if (!canvas) return;
+                          const ctx = canvas.getContext('2d');
+                          if (!ctx) return;
+                          const width = 800;
+                          const height = 600;
+                          canvas.width = width;
+                          canvas.height = height;
+                          ctx.clearRect(0, 0, width, height);
+                          ctx.fillStyle = 'rgba(255, 0, 0, 0.3)';
+                          for (let y = 0; y < segmentationMask.length; y += 1) {
+                            const row = segmentationMask[y];
+                            for (let x = 0; x < row.length; x += 1) {
+                              if (row[x]) {
+                                ctx.fillRect(x, y, 1, 1);
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    )}
                   </div>
                 </div>
 

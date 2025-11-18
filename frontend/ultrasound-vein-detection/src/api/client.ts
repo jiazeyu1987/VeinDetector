@@ -1,15 +1,17 @@
-import { 
-  VideoInfo, 
-  VeinDetectionResult, 
-  ROI, 
-  ApiResponse, 
-  AnalysisRequest, 
-  AnalysisResponse, 
+import {
+  VideoInfo,
+  VeinDetectionResult,
+  ROI,
+  ApiResponse,
+  AnalysisRequest,
+  AnalysisResponse,
   JobStatus,
-  VeinData
+  VeinData,
+  SamusSegmentationResponse,
 } from './types';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000';
 
 class ApiClient {
   private async request<T>(
@@ -82,6 +84,36 @@ class ApiClient {
   // 获取分析结果
   async getAnalysisResults(jobId: string): Promise<ApiResponse<VeinDetectionResult[]>> {
     return this.request<ApiResponse<VeinDetectionResult[]>>(`/analysis/results/${jobId}`);
+  }
+
+  // 使用 SAMUS 对当前帧进行分割（直接调用后端 FastAPI）
+  async segmentCurrentFrame(payload: {
+    imageDataUrl: string;
+    roi: ROI;
+    modelName: string;
+  }): Promise<ApiResponse<SamusSegmentationResponse>> {
+    const response = await fetch(`${BACKEND_BASE_URL}/analysis/samus`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        image_data_url: payload.imageDataUrl,
+        roi: {
+          x: Math.round(payload.roi.x),
+          y: Math.round(payload.roi.y),
+          width: Math.round(payload.roi.width),
+          height: Math.round(payload.roi.height),
+        },
+        model_name: payload.modelName,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`SAMUS segmentation failed: ${response.status}`);
+    }
+
+    return response.json();
   }
 
   // 获取特定帧的检测结果

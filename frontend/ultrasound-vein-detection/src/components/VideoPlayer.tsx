@@ -10,6 +10,7 @@ interface VideoPlayerProps {
   width?: number;
   height?: number;
   className?: string;
+  onCanvasRef?: (canvas: HTMLCanvasElement | null) => void;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -22,6 +23,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   width = 800,
   height = 600,
   className = '',
+  onCanvasRef,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -141,7 +143,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       ) : null}
 
       <canvas
-        ref={canvasRef}
+        ref={el => {
+          canvasRef.current = el;
+          if (onCanvasRef) {
+            onCanvasRef(el);
+          }
+        }}
         width={width}
         height={height}
         className="w-full h-full bg-gray-800"
@@ -168,4 +175,3 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     </div>
   );
 };
-

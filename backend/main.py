@@ -13,13 +13,21 @@ from datetime import datetime
 import uuid
 import asyncio
 from models import (
-    VideoUploadResponse, ProcessingProgressResponse, APIResponse,
-    VideoProcessingTask, DetectionSettings, ProcessingStatus,
-    VeinDetectionResult, ROIRegion
+    VideoUploadResponse,
+    ProcessingProgressResponse,
+    APIResponse,
+    VideoProcessingTask,
+    DetectionSettings,
+    ProcessingStatus,
+    VeinDetectionResult,
+    ROIRegion,
+    SamusAnalysisRequest,
+    SamusMaskResponse,
 )
 from video_processor import VideoProcessor
 from vein_detector import VeinDetector, VeinRegion
 from roi_handler import ROIHandler
+from samus_inference import SamusVeinSegmentor, decode_image_from_data_url
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +64,7 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 video_processor = VideoProcessor(str(UPLOAD_DIR))
 vein_detector = VeinDetector()
 roi_handler = ROIHandler()
+samus_segmentor = SamusVeinSegmentor()
 
 # 任务存储（实际项目中应使用数据库）
 processing_tasks: Dict[str, VideoProcessingTask] = {}
@@ -323,6 +332,55 @@ async def health_check():
             'roi_handler': 'ok'
         }
     }
+
+
+@app.post("/analysis/samus", response_model=APIResponse)
+async def analyze_frame_with_samus(request: SamusAnalysisRequest):
+    """
+    使用 SAMUS 模型对当前帧进行静脉血管分割。
+
+    前端应传入：
+    - image_data_url: 当前帧的 data URL（来自 canvas.toDataURL）
+    - roi: 当前帧上的 ROI 区域
+    """
+    try:
+        image = decode_image_from_data_url(request.image_data_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Failed to decode input frame")
+        raise HTTPException(status_code=500, detail="无法解析输入图像") from exc
+
+    try:
+        model_name = (request.model_name or "samus").lower()
+        # 根据前端选择的模型名称路由到不同的分割实现
+        # 目前仅实现了 SAMUS 占位推理，其它模型可以在此处接入
+        if model_name in {"samus", "samus-ultrasound"}:
+            mask = samus_segmentor.segment(image, request.roi)
+        elif model_name in {"unet", "unet++"}:
+            # TODO: 在这里调用 U-Net 模型推理
+            mask = samus_segmentor.segment(image, request.roi)
+        elif model_name in {"nnunet", "nn-unet"}:
+            # TODO: 在这里调用 nnU-Net 模型推理
+            mask = samus_segmentor.segment(image, request.roi)
+        else:
+            logger.warning("未知模型名称 %s，回退到 SAMUS", request.model_name)
+            mask = samus_segmentor.segment(image, request.roi)
+    except Exception as exc:
+        logger.exception("Vein segmentation failed")
+        raise HTTPException(status_code=500, detail="静脉分割失败") from exc
+
+    if mask.ndim != 2:
+        raise HTTPException(status_code=500, detail="分割结果 mask 维度错误")
+
+    height, width = mask.shape
+    response = SamusMaskResponse(width=width, height=height, mask=mask.astype(int).tolist())
+
+    return APIResponse(
+        success=True,
+        message="SAMUS 分割完成",
+        data=response.dict(),
+    )
 
 async def process_video_background(task_id: str, file_path: str):
     """后台视频处理任务"""

@@ -68,3 +68,9 @@ export interface JobStatus {
   progress?: number;
   error?: string;
 }
+
+export interface SamusSegmentationResponse {
+  width: number;
+  height: number;
+  mask: number[][];
+}
