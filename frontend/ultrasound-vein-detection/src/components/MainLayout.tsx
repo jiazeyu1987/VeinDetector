@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Upload, Play, Pause, Square, Settings, BarChart3, Camera, FileVideo } from 'lucide-react';
 import { VideoPlayer } from './VideoPlayer';
 import { ROIEditor } from './ROIEditor';
@@ -26,6 +26,12 @@ export const MainLayout: React.FC = () => {
   const [analysisJob, setAnalysisJob] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const previewUrlRef = useRef<string | null>(null);
+  const revokeBlobUrl = useCallback((url?: string | null) => {
+    if (url && url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
 
   // 可视化设置
   const [showVisualization, setShowVisualization] = useState(true);
@@ -48,6 +54,8 @@ export const MainLayout: React.FC = () => {
       const response = await mockApi.uploadVideo(file);
       
       if (response.success && response.data) {
+        revokeBlobUrl(previewUrlRef.current);
+        previewUrlRef.current = response.data.videoUrl;
         setCurrentVideo(response.data);
         setCurrentFrame(0);
         setCurrentROI(null);
@@ -80,6 +88,12 @@ export const MainLayout: React.FC = () => {
       handleFileUpload(videoFile);
     }
   }, [handleFileUpload]);
+
+  useEffect(() => {
+    return () => {
+      revokeBlobUrl(previewUrlRef.current);
+    };
+  }, [revokeBlobUrl]);
 
   // 开始分析
   const startAnalysis = useCallback(async () => {
@@ -354,6 +368,7 @@ export const MainLayout: React.FC = () => {
               <div className="space-y-4">
                 {/* 视频播放器 */}
                 <VideoPlayer
+                  videoUrl={currentVideo.videoUrl}
                   currentFrame={currentFrame}
                   totalFrames={currentVideo.frameCount}
                   onFrameChange={setCurrentFrame}

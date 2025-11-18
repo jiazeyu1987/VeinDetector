@@ -127,6 +127,19 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     }
   }, [isPlaying]);
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      if (videoUrl) {
+        video.load();
+      } else {
+        video.pause();
+      }
+      setVideoDuration(0);
+      setIsLoading(Boolean(videoUrl));
+    }
+  }, [videoUrl]);
+
   // 同步到指定帧
   useEffect(() => {
     if (videoRef.current) {
@@ -138,6 +151,32 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     }
   }, [currentFrame]);
+
+  useEffect(() => {
+    let animationFrameId: number;
+
+    const drawFrame = () => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(0, 0, width, height);
+
+          if (video && video.readyState >= 2) {
+            ctx.drawImage(video, 0, 0, width, height);
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(drawFrame);
+    };
+
+    animationFrameId = requestAnimationFrame(drawFrame);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [width, height, videoUrl]);
 
   const progressPercentage = totalFrames > 0 ? (currentFrame / totalFrames) * 100 : 0;
 

@@ -7,6 +7,7 @@ export interface VideoInfo {
   fps: number;
   width: number;
   height: number;
+  videoUrl: string;
 }
 
 export interface ROI {

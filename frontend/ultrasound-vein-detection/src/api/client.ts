@@ -189,6 +189,7 @@ export const mockApi = {
     
     // 生成一个唯一的视频ID
     const videoId = `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const previewUrl = URL.createObjectURL(file);
     
     return {
       success: true,
@@ -200,6 +201,7 @@ export const mockApi = {
         fps: 30,
         width: 1920,
         height: 1080,
+        videoUrl: previewUrl,
       },
     };
   },
