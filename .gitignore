@@ -1,0 +1,392 @@
+# ============================================
+# VeinDetector Project - Comprehensive .gitignore
+# ============================================
+
+# ---------- OS & System Files ----------
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+*.lnk
+*.url
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ---------- Editor & IDE Files ----------
+# VSCode
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# IntelliJ/PyCharm
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Vim/Emacs
+*.swp
+*.swo
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ---------- Node.js (Frontend & Root) ----------
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+.pnpm-store/
+pnpm-lock.yaml
+package-lock.json
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+out/
+.next/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+.nyc_output/
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite-cache/
+.vite/
+
+# ---------- Python (Backend) ----------
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ---------- Environment & Configuration ----------
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Configuration overrides
+config/local/
+config/production.yaml
+config/staging.yaml
+
+# Secrets and credentials
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+credentials/
+
+# ---------- Project-Specific Directories ----------
+# User uploads and processing outputs
+backend/uploads/*
+backend/outputs/*
+!backend/uploads/.gitkeep
+!backend/outputs/.gitkeep
+
+# Browser screenshots (e2e testing)
+.browser_screenshots/
+
+# Video processing temp files
+*.mp4.tmp
+*.avi.tmp
+*.mov.tmp
+temp_videos/
+processing_cache/
+
+# ML Models and Training (large generated files)
+*.pth
+*.pt
+*.pkl
+*.h5
+*.hdf5
+*.joblib
+models/
+checkpoints/
+training_logs/
+
+# Dataset files (if large)
+datasets/
+data/raw/
+data/processed/
+data/cache/
+
+# ---------- Testing & Coverage ----------
+# Jest
+.jest-cache/
+test-results/
+coverage/
+jest-stare/
+
+# Test artifacts
+test-results/
+playwright-report/
+test-results.xml
+junit.xml
+
+# Performance benchmarks
+benchmark_results/
+performance_logs/
+
+# ---------- Docker & Container ----------
+# Docker build cache
+.dockerignore
+docker-compose.override.yml
+
+# Container volumes and runtime data
+volumes/
+docker-data/
+
+# Kubernetes (if used)
+*.kubeconfig
+
+# ---------- Logs & Temporary Files ----------
+# Application logs
+logs/
+*.log
+error.log
+access.log
+debug.log
+
+# Temporary directories
+temp/
+tmp/
+cache/
+.tmp/
+
+# Runtime files
+*.pid
+*.seed
+*.pid.lock
+
+# ---------- Backup & Archive Files ----------
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+.~*
+
+# ---------- Development Tools ----------
+# Husky (keep hooks directory but ignore logs)
+.husky/_/
+!.husky/pre-commit
+!.husky/pre-push
+
+# Lint-staged cache
+.lintstagedrc
+
+# Prettier cache
+.prettiercache
+
+# ESLint cache
+.eslintcache
+
+# Stylelint cache
+.stylelintcache
+
+# ---------- Documentation Generation ----------
+docs/build/
+docs/_build/
+site/
+
+# JSDoc
+jsdoc-out/
+jsdoc/
+
+# ---------- Monitoring & Analytics ----------
+# Monitoring data
+monitoring/
+metrics/
+.tracing/
+
+# Error tracking
+sentry-debug-meta-file
+
+# ---------- Database & Storage ----------
+# Local database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Redis dump
+dump.rdb
+
+# PostgreSQL
+*.pgsql
+postgresql-data/
+
+# ---------- Cloud & Infrastructure ----------
+# AWS
+.aws/
+.aws-credentials
+
+# Google Cloud
+.gcloud/
+gsutil/
+
+# Azure
+.azure/
+
+# Terraform (if used)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# ---------- Large Media Files ----------
+# Video files (keep only small samples)
+*.mp4
+*.avi
+*.mov
+*.wmv
+*.flv
+*.webm
+
+# Large image files
+*.tiff
+*.tif
+*.bmp
+*.raw
+
+# Medical imaging formats (large files)
+*.dcm
+*.dicom
+*.nii
+*.nii.gz
+
+# ---------- Final Notes ----------
+# Keep important .gitkeep files to preserve directory structure
+# Add .gitkeep files to empty directories that should be tracked
+# Review and adjust model/data file exclusions based on actual file sizes

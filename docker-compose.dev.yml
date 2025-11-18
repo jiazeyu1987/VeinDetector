@@ -1,0 +1,161 @@
+# 开发环境Docker Compose配置
+version: '3.8'
+
+services:
+  # 数据库服务
+  postgres:
+    image: postgres:13
+    container_name: vein-postgres-dev
+    environment:
+      POSTGRES_DB: vein_detection_dev
+      POSTGRES_USER: vein_user
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # Redis缓存
+  redis:
+    image: redis:alpine
+    container_name: vein-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+      - ./docker/redis/redis.conf:/etc/redis/redis.conf
+    command: redis-server /etc/redis/redis.conf
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # MinIO对象存储
+  minio:
+    image: minio/minio
+    container_name: vein-minio-dev
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: dev_minio_password
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_dev_data:/data
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # 后端API服务
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vein-api-dev
+    environment:
+      - DATABASE_URL=postgresql://vein_user:dev_password@postgres:5432/vein_detection_dev
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_TYPE=minio
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=admin
+      - MINIO_SECRET_KEY=dev_minio_password
+      - DEBUG=True
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data/videos:/app/data/videos
+      - ./logs/api:/app/logs
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # 前端开发服务器
+  web:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend.dev
+    container_name: vein-web-dev
+    environment:
+      - NODE_ENV=development
+      - VITE_API_BASE_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # 视频处理服务
+  video-service:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vein-video-dev
+    command: python -m app.services.video_service
+    environment:
+      - DATABASE_URL=postgresql://vein_user:dev_password@postgres:5432/vein_detection_dev
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+      - ./data/videos:/app/data/videos
+      - ./logs/video:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+  # 邮件服务（用于开发）
+  mailhog:
+    image: mailhog/mailhog
+    container_name: vein-mailhog-dev
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - vein-dev-network
+
+  # Jupyter Notebook（用于调试）
+  jupyter:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.dev
+    container_name: vein-jupyter-dev
+    command: jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''
+    environment:
+      - DATABASE_URL=postgresql://vein_user:dev_password@postgres:5432/vein_detection_dev
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./backend:/app
+      - ./notebooks:/app/notebooks
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - vein-dev-network
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  minio_dev_data:
+
+networks:
+  vein-dev-network:
+    driver: bridge

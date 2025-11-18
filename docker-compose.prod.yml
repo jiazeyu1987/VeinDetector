@@ -1,0 +1,453 @@
+# 生产环境Docker Compose配置
+version: '3.8'
+
+services:
+  # Nginx负载均衡和反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: vein-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d
+      - ./docker/ssl:/etc/nginx/ssl
+      - ./frontend/dist:/usr/share/nginx/html
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - api
+      - web
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.25'
+
+  # 前端Web服务
+  web:
+    build:
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend.prod
+    container_name: vein-web
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - ./logs/web:/var/log/nginx
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # 后端API服务
+  api:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.prod
+    container_name: vein-api
+    environment:
+      - DATABASE_URL=postgresql://vein_user:${DB_PASSWORD}@postgres:5432/vein_detection
+      - REDIS_URL=redis://redis:6379/0
+      - STORAGE_TYPE=s3
+      - S3_ENDPOINT=${S3_ENDPOINT}
+      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
+      - S3_SECRET_KEY=${S3_SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - DEBUG=False
+      - API_WORKERS=4
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs/api:/app/logs
+      - ./data/videos:/app/data/videos
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: pause
+
+  # 视频处理服务
+  video-service:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.prod
+    container_name: vein-video-service
+    command: python -m app.services.video_service
+    environment:
+      - DATABASE_URL=postgresql://vein_user:${DB_PASSWORD}@postgres:5432/vein_detection
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs/video:/app/logs
+      - ./data/videos:/app/data/videos
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # 静脉检测服务（GPU支持）
+  detection-service:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.gpu
+    container_name: vein-detection
+    runtime: nvidia
+    environment:
+      - CUDA_VISIBLE_DEVICES=0
+      - DETECTION_BATCH_SIZE=4
+      - DETECTION_MODEL_PATH=/app/models/vein_detection.pth
+      - DETECTION_MAX_QUEUE_SIZE=100
+    volumes:
+      - ./logs/detection:/app/logs
+      - ./data/videos:/app/data/videos
+      - ./models:/app/models
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+  # ROI管理服务
+  roi-service:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.prod
+    container_name: vein-roi-service
+    command: python -m app.services.roi_service
+    environment:
+      - DATABASE_URL=postgresql://vein_user:${DB_PASSWORD}@postgres:5432/vein_detection
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs/roi:/app/logs
+      - ./data/videos:/app/data/videos
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # 任务队列处理器
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.prod
+    container_name: vein-celery-worker
+    command: celery -A app.celery worker --loglevel=info --concurrency=4
+    environment:
+      - DATABASE_URL=postgresql://vein_user:${DB_PASSWORD}@postgres:5432/vein_detection
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs/celery:/app/logs
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+
+  # 定时任务调度器
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: ../docker/Dockerfile.prod
+    container_name: vein-celery-beat
+    command: celery -A app.celery beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://vein_user:${DB_PASSWORD}@postgres:5432/vein_detection
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://redis:6379/2
+    depends_on:
+      - postgres
+      - redis
+    volumes:
+      - ./logs/celery-beat:/app/logs
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # PostgreSQL数据库
+  postgres:
+    image: postgres:13
+    container_name: vein-postgres
+    environment:
+      - POSTGRES_DB=vein_detection
+      - POSTGRES_USER=vein_user
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf
+      - ./docker/postgres/pg_hba.conf:/etc/postgresql/pg_hba.conf
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+
+  # Redis缓存
+  redis:
+    image: redis:alpine
+    container_name: vein-redis
+    command: redis-server /etc/redis/redis.conf --appendonly yes --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./docker/redis/redis.conf:/etc/redis/redis.conf
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # MinIO对象存储
+  minio:
+    image: minio/minio:latest
+    container_name: vein-minio
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_REGION_NAME=${MINIO_REGION_NAME:-us-east-1}
+      - MINIO_REGION=${MINIO_REGION_NAME:-us-east-1}
+    volumes:
+      - minio_data:/data
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Prometheus监控
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: vein-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+      - ./docker/prometheus/rules:/etc/prometheus/rules
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # Grafana监控面板
+  grafana:
+    image: grafana/grafana:latest
+    container_name: vein-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # 日志收集
+  filebeat:
+    image: elastic/filebeat:7.15.0
+    user: root
+    container_name: vein-filebeat
+    volumes:
+      - ./docker/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./logs:/var/log/vein-detection:ro
+    environment:
+      - ELASTICSEARCH_HOST=elasticsearch:9200
+    networks:
+      - vein-network
+    restart: unless-stopped
+    depends_on:
+      - elasticsearch
+
+  # Elasticsearch（用于日志存储）
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.15.0
+    container_name: vein-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+      - xpack.security.enabled=false
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+
+  # Kibana（用于日志分析）
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.15.0
+    container_name: vein-kibana
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    networks:
+      - vein-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  elasticsearch_data:
+    driver: local
+
+networks:
+  vein-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

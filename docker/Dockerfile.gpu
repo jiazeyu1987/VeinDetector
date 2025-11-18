@@ -1,0 +1,80 @@
+# GPU支持的检测服务Dockerfile
+FROM nvidia/cuda:11.8-devel-ubuntu20.04
+
+# 设置环境变量
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
+
+# 安装Python和系统依赖
+RUN apt-get update && apt-get install -y \
+    python3.9 \
+    python3.9-dev \
+    python3-pip \
+    python3.9-venv \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libavcodec-dev \
+    libavformat-dev \
+    libswscale-dev \
+    libv4l-dev \
+    libxvidcore-dev \
+    libx264-dev \
+    libjpeg-dev \
+    libpng-dev \
+    libtiff-dev \
+    gfortran \
+    openexr \
+    libatlas-base-dev \
+    libtbb2 \
+    libtbb-dev \
+    libdc1394-22-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 创建虚拟环境
+RUN python3.9 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制依赖文件
+COPY requirements.txt .
+
+# 安装Python依赖
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# 复制应用代码
+COPY . .
+
+# 安装应用
+RUN pip install -e .
+
+# 创建非root用户
+RUN groupadd -r app && useradd -r -g app app
+
+# 创建必要目录
+RUN mkdir -p /app/logs /app/data/videos /app/models && \
+    chown -R app:app /app
+
+# 切换到非root用户
+USER app
+
+# 设置CUDA环境变量
+ENV CUDA_VISIBLE_DEVICES=0
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+# 健康检查
+HEALTHCHECK --interval=60s --timeout=30s --start-period=10s --retries=3 \
+    CMD nvidia-smi > /dev/null 2>&1 || exit 1
+
+# 启动命令
+CMD ["python", "-m", "app.services.detection_service"]
