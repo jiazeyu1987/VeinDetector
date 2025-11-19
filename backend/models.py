@@ -16,11 +16,13 @@ class ProcessingStatus(str, Enum):
 
 
 class VeinDetectionResult(BaseModel):
-    """静脉检测结果"""
+    """静脉检测结果（视频离线分析使用）"""
 
     frame_number: int
-    vein_regions: List[Dict[str, Any]] = Field(description="检测到的静脉区域列表")
-    confidence: float = Field(description="检测置信度", ge=0, le=1)
+    vein_regions: List[Dict[str, Any]] = Field(
+        default_factory=list, description="检测到的静脉区域列表"
+    )
+    confidence: float = Field(description="检测置信度", ge=0.0, le=1.0)
     processing_time: float = Field(description="处理时间(秒)")
 
 
@@ -44,16 +46,22 @@ class ROIRegion(BaseModel):
 
 
 class SamusAnalysisRequest(BaseModel):
-    """单帧分割请求（当前实际使用 SMP Unet + ResNet34）"""
+    """
+    单帧分割请求（当前用于 SMP U-Net / 传统 CV / 增强 CV 等多种分割模式）
+    """
 
     image_data_url: str = Field(description="前端 canvas.toDataURL 导出的当前帧图像")
     roi: ROIRegion = Field(description="当前帧上的 ROI 区域")
     model_name: str = Field(
         default="smp_unet_resnet34",
         description=(
-            "分割模型名称，例如 'smp_unet_resnet34'（segmentation_models_pytorch Unet"
-            " + ResNet34 encoder）"
+            "分割模型名称，例如 'smp_unet_resnet34'（segmentation_models_pytorch "
+            "Unet + ResNet34 encoder），或 'cv'、'cv_enhanced' 等"
         ),
+    )
+    parameters: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="可选的分割参数（例如阈值、面积过滤范围等）",
     )
 
 
@@ -66,9 +74,11 @@ class SamusMaskResponse(BaseModel):
 
 
 class VideoProcessingTask(BaseModel):
-    """视频处理任务"""
+    """视频处理任务（离线整段视频分析）"""
 
-    task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    task_id: str = Field(
+        default_factory=lambda: str(uuid.uuid4()), description="任务 ID（UUID）"
+    )
     filename: str = Field(description="文件名")
     file_size: int = Field(description="文件大小(字节)")
     status: ProcessingStatus = Field(default=ProcessingStatus.PENDING)
@@ -103,7 +113,7 @@ class ProcessingProgressResponse(BaseModel):
 
     task_id: str
     status: ProcessingStatus
-    progress: float = Field(description="处理进度百分比", ge=0, le=100)
+    progress: float = Field(description="处理进度百分比", ge=0.0, le=100.0)
     current_frame: Optional[int] = Field(default=None)
     total_frames: Optional[int] = Field(default=None)
     estimated_time: Optional[float] = Field(
@@ -113,7 +123,7 @@ class ProcessingProgressResponse(BaseModel):
 
 
 class DetectionSettings(BaseModel):
-    """检测设置参数"""
+    """传统检测（VeinDetector）使用的参数"""
 
     canny_threshold_low: int = Field(default=50, ge=0, le=255)
     canny_threshold_high: int = Field(default=150, ge=0, le=255)

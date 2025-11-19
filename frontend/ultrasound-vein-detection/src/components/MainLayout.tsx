@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Upload, Play, Pause, Square, Settings, BarChart3, Camera, FileVideo } from 'lucide-react';
 import { VideoPlayer } from './VideoPlayer';
 import { ROIEditor } from './ROIEditor';
@@ -21,7 +21,15 @@ export const MainLayout: React.FC = () => {
   const [showSegmentationOverlay, setShowSegmentationOverlay] = useState(true);
   // 当前实际使用的是 segmentation_models_pytorch 提供的 U-Net (ResNet34, ImageNet encoder)
   const [segmentationModel, setSegmentationModel] = useState('smp_unet_resnet34');
+  const [showSettingsPanel, setShowSettingsPanel] = useState(true);
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [isROIMode, setIsROIMode] = useState(false);
   const previewUrlRef = useRef<string | null>(null);
+  const isPanningRef = useRef(false);
+  const panStartRef = useRef<{ x: number; y: number } | null>(null);
+  const panOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const revokeBlobUrl = useCallback((url?: string | null) => {
     if (url && url.startsWith('blob:')) {
       URL.revokeObjectURL(url);
@@ -200,6 +208,86 @@ export const MainLayout: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [startAnalysis, showVisualization, currentROI]);
 
+  useEffect(() => {
+    if (!currentVideo) {
+      return;
+    }
+    const targetFrame = Math.min(9, currentVideo.frameCount - 1);
+    setCurrentFrame(targetFrame);
+  }, [currentVideo]);
+
+  const handleImageWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const delta = e.deltaY;
+    const zoomStep = 0.1;
+    setZoom(prevZoom => {
+      let nextZoom = prevZoom;
+      if (delta < 0) {
+        // scroll up: zoom in
+        nextZoom = prevZoom * (1 + zoomStep);
+      } else if (delta > 0) {
+        // scroll down: zoom out
+        nextZoom = prevZoom * (1 - zoomStep);
+      }
+      const minZoom = 0.5;
+      const maxZoom = 3;
+      if (nextZoom < minZoom) nextZoom = minZoom;
+      if (nextZoom > maxZoom) nextZoom = maxZoom;
+      return nextZoom;
+    });
+  }, []);
+
+  const handlePanMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isROIMode) return;
+      if (e.button !== 0) return;
+      e.preventDefault();
+      isPanningRef.current = true;
+      panStartRef.current = { x: e.clientX, y: e.clientY };
+      panOriginRef.current = { x: panX, y: panY };
+    },
+    [isROIMode, panX, panY],
+  );
+
+  const handlePanMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      if (isROIMode) return;
+      if (!isPanningRef.current || !panStartRef.current) return;
+      e.preventDefault();
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      setPanX(panOriginRef.current.x + dx);
+      setPanY(panOriginRef.current.y + dy);
+    },
+    [isROIMode],
+  );
+
+  const handlePanMouseUp = useCallback(() => {
+    isPanningRef.current = false;
+    panStartRef.current = null;
+  }, []);
+
+  const handleClearROI = useCallback(() => {
+    setCurrentROI(null);
+  }, []);
+
+  const handleShrinkROI = useCallback(() => {
+    setCurrentROI(prev => {
+      if (!prev) return prev;
+      const newWidth = prev.width * 0.8;
+      const newHeight = prev.height * 0.8;
+      const newX = prev.x + (prev.width - newWidth) / 2;
+      const newY = prev.y + (prev.height - newHeight) / 2;
+      return {
+        ...prev,
+        x: newX,
+        y: newY,
+        width: newWidth,
+        height: newHeight,
+      };
+    });
+  }, []);
+
   return (
     <div
       id="main-container"
@@ -242,7 +330,8 @@ export const MainLayout: React.FC = () => {
                 <option value="smp_unet_resnet34">
                   深度模型 · SMP U-Net (ResNet34)
                 </option>
-                <option value="cv">传统 CV 分割 (OpenCV)</option>
+                <option value="cv">传统 CV 分割 (OpenCV · 基础版)</option>
+                <option value="cv_enhanced">传统 CV 分割 (Frangi 增强版)</option>
               </select>
             </div>
             <button
@@ -260,7 +349,13 @@ export const MainLayout: React.FC = () => {
             >
               <span>{showSegmentationOverlay ? '隐藏分割结果' : '显示分割结果'}</span>
             </button>
-            <button className="p-2 bg-gray-600 hover:bg-gray-500 rounded transition-colors">
+            <button
+              onClick={() => setShowSettingsPanel(prev => !prev)}
+              className={`p-2 rounded transition-colors ${
+                showSettingsPanel ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-600 hover:bg-gray-500'
+              }`}
+              title="参数设置"
+            >
               <Settings size={16} />
             </button>
           </div>
@@ -283,11 +378,11 @@ export const MainLayout: React.FC = () => {
           className="bg-gray-800 border-r border-gray-700 flex flex-col"
           style={{ width: `${leftPanelSize}%` }}
         >
-          <div className="p-4 border-b border-gray-700">
+                    <div className="p-4 border-b border-gray-700">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2 text-sm text-gray-300">
-                  <span>抽帧:</span>
+                  <span>��֡:</span>
                   <select
                     value={frameStep}
                     onChange={e => {
@@ -297,27 +392,49 @@ export const MainLayout: React.FC = () => {
                     }}
                     className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
                   >
-                    <option value={1}>每帧</option>
-                    <option value={2}>每2帧</option>
-                    <option value={5}>每5帧</option>
-                    <option value={10}>每10帧</option>
+                    <option value={1}>ÿ֡</option>
+                    <option value={2}>ÿ2֡</option>
+                    <option value={5}>ÿ5֡</option>
+                    <option value={10}>ÿ10֡</option>
                   </select>
+                </div>
+                <div className="flex items-center space-x-2 ml-4">
+                  <button
+                    onClick={handleClearROI}
+                    disabled={!currentROI}
+                    className="px-3 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs"
+                  >
+                    ɾ�� ROI
+                  </button>
+                  <button
+                    onClick={() => setIsROIMode(prev => !prev)}
+                    className={`px-3 py-1 rounded text-xs text-white transition-colors ${
+                      isROIMode ? 'bg-green-500 hover:bg-green-400' : 'bg-gray-600 hover:bg-gray-500'
+                    }`}
+                  >
+                    ��ͼ ROI
+                  </button>
+                  <button
+                    onClick={handleShrinkROI}
+                    disabled={!currentROI}
+                    className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs"
+                  >
+                    ��С ROI
+                  </button>
+                  {currentROI && (
+                    <span className="text-xs bg-blue-600 px-2 py-1 rounded text-white">
+                      ROI �ѹ���
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex items-center space-x-4">
                 <div className="text-sm text-gray-300">
                   {currentFrame + 1} / {displayedTotalFrames}
                 </div>
-                {currentROI && (
-                  <div className="text-xs bg-blue-600 px-2 py-1 rounded">
-                    ROI已设置
-                  </div>
-                )}
               </div>
             </div>
-          </div>
-
-          <div className="flex-1 p-4 overflow-auto">
+          </div>          <div className="flex-1 p-4 overflow-auto">
             {!currentVideo ? (
               <div className="h-full flex items-center justify-center border-2 border-dashed border-gray-600 rounded">
                 <div className="text-center">
@@ -328,7 +445,20 @@ export const MainLayout: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-4">
-                <div className="relative mx-auto" style={{ width: 800, height: 600 }}>
+                <div
+                  className="relative mx-auto"
+                  style={{
+                    width: 800,
+                    height: 600,
+                    transform: `translate(${panX}px, ${panY}px) scale(${zoom})`,
+                    transformOrigin: 'center center',
+                  }}
+                  onWheel={handleImageWheel}
+                  onMouseDown={handlePanMouseDown}
+                  onMouseMove={handlePanMouseMove}
+                  onMouseUp={handlePanMouseUp}
+                  onMouseLeave={handlePanMouseUp}
+                >
                   <VideoPlayer
                     videoUrl={currentVideo.videoUrl}
                     currentFrame={currentFrame}
@@ -343,7 +473,7 @@ export const MainLayout: React.FC = () => {
                       frameCanvasRef.current = canvas;
                     }}
                   />
-                  <div className="absolute inset-0">
+                  <div className="absolute inset-0" style={{ pointerEvents: isROIMode ? 'auto' : 'none' }}>
                     <ROIEditor
                       imageWidth={800}
                       imageHeight={600}
@@ -442,7 +572,7 @@ export const MainLayout: React.FC = () => {
               <div className="text-sm text-gray-400 mt-1">共 {detectionResults.length} 帧结果</div>
             )}
           </div>
-          <div className="flex-1 p-4">
+          <div className={`flex-1 p-4 ${showSettingsPanel ? 'hidden' : ''}`}>
             {currentVideo && showVisualization ? (
               <VeinVisualization
                 imageWidth={800}
@@ -466,6 +596,93 @@ export const MainLayout: React.FC = () => {
               </div>
             )}
           </div>
+          {showSettingsPanel && (
+            <div className="flex-1 p-4 text-sm text-gray-200 space-y-6">
+              <div>
+                <h3 className="font-medium mb-2">分割参数</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between">
+                    <span className="mr-2">分割模型</span>
+                    <select
+                      value={segmentationModel}
+                      onChange={e => setSegmentationModel(e.target.value)}
+                      className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
+                    >
+                      <option value="smp_unet_resnet34">
+                        深度模型 · SMP U-Net (ResNet34)
+                      </option>
+                      <option value="cv">传统 CV 分割 (OpenCV · 基础版)</option>
+                      <option value="cv_enhanced">
+                        传统 CV 分割 (Frangi 增强版)
+                      </option>
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between">
+                    <span className="mr-2">显示分割叠加</span>
+                    <input
+                      type="checkbox"
+                      checked={showSegmentationOverlay}
+                      onChange={e => setShowSegmentationOverlay(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-medium mb-2">检测结果可视化</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between">
+                    <span className="mr-2">显示检测结果层</span>
+                    <input
+                      type="checkbox"
+                      checked={showVisualization}
+                      onChange={e => setShowVisualization(e.target.checked)}
+                      className="h-4 w-4"
+                    />
+                  </label>
+                  <label className="block">
+                    <div className="flex items-center justify-between mb-1">
+                      <span>置信度阈值</span>
+                      <span>{confidenceThreshold.toFixed(2)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={confidenceThreshold}
+                      onChange={e => setConfidenceThreshold(Number(e.target.value))}
+                      className="w-full"
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="font-medium mb-2">播放 / 抽帧</h3>
+                <div className="space-y-2">
+                  <label className="flex items-center justify-between">
+                    <span className="mr-2">抽帧步长</span>
+                    <select
+                      value={frameStep}
+                      onChange={e => {
+                        const value = parseInt(e.target.value, 10) || 1;
+                        setFrameStep(value);
+                        setCurrentFrame(0);
+                      }}
+                      className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
+                    >
+                      <option value={1}>每帧</option>
+                      <option value={2}>每 2 帧</option>
+                      <option value={5}>每 5 帧</option>
+                      <option value={10}>每 10 帧</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
           {isAnalyzing && (
             <div className="p-4 border-t border-gray-700">
               <div className="mb-2">
@@ -496,3 +713,14 @@ export const MainLayout: React.FC = () => {
     </div>
   );
 };
+
+
+
+
+
+
+
+
+
+
+

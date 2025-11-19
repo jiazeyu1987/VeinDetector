@@ -1,16 +1,17 @@
 import base64
 import logging
 from io import BytesIO
-from typing import Tuple
+from typing import Dict, Optional, Tuple
 
 import cv2
 import numpy as np
 from PIL import Image
 import torch
 import torch.nn.functional as F
+from skimage.filters import frangi
 
-# 兼容部分环境下 transformers 对 torch.utils._pytree 的新 API 依赖，
-# 避免在导入 segmentation_models_pytorch -> timm -> torchvision 时崩溃。
+# 兼容部分环境中 transformers 对 torch.utils._pytree 的新 API 依赖，
+# 避免在导入 segmentation_models_pytorch -> timm -> torchvision 时崩溃
 try:  # pragma: no cover - 环境相关补丁
     import torch.utils._pytree as _pytree
 
@@ -39,14 +40,13 @@ logger = logging.getLogger(__name__)
 def decode_image_from_data_url(data_url: str) -> np.ndarray:
     """
     解码前端传来的 data URL（例如 canvas.toDataURL）为 RGB numpy 数组。
-
-    期望格式: "data:image/png;base64,AAAA..."
+    期望格式: \"data:image/png;base64,AAAA...\"
     """
     if not data_url.startswith("data:"):
         raise ValueError("Invalid image data URL")
 
     try:
-        header, encoded = data_url.split(",", 1)
+        _, encoded = data_url.split(",", 1)
     except ValueError as exc:
         raise ValueError("Malformed image data URL") from exc
 
@@ -64,8 +64,7 @@ def decode_image_from_data_url(data_url: str) -> np.ndarray:
 class SamusVeinSegmentor:
     """
     使用 segmentation_models_pytorch 提供的 U-Net 作为示例分割模型。
-
-    - 仅对当前帧的 ROI 区域做分割，然后把 ROI 内的 mask 贴回整张图。
+    - 仅对当前帧的 ROI 区域做分割，然后将 ROI 内的 mask 贴回整张图。
     - 当前权重为 ImageNet 预训练 encoder + 随机初始化 decoder，仅作示例；
       你可以在自己的超声静脉数据上微调后，加载自定义权重。
     """
@@ -75,7 +74,7 @@ class SamusVeinSegmentor:
         self.device: torch.device = torch.device(
             "cuda" if torch.cuda.is_available() else "cpu"
         )
-        self.model: torch.nn.Module | None = None
+        self.model: Optional[torch.nn.Module] = None
 
     def _ensure_initialized(self) -> None:
         """懒加载 U-Net 模型，避免在导入模块时就占用显存。"""
@@ -91,10 +90,9 @@ class SamusVeinSegmentor:
             return
 
         logger.info("Initializing U-Net vein segmentation model (SMP)...")
-        # 示例：使用 ResNet34 作为 encoder 的 U-Net
         self.model = smp.Unet(
             encoder_name="resnet34",
-            encoder_weights="imagenet",  # encoder 用 ImageNet 预训练权重
+            encoder_weights="imagenet",
             in_channels=3,
             classes=1,
             activation=None,
@@ -103,7 +101,7 @@ class SamusVeinSegmentor:
         self.model.to(self.device)
         self.model.eval()
 
-        # 如果后续你有自己训练的权重，可以在这里加载，例如：
+        # 如有自定义权重，可在此加载：
         # state_dict = torch.load("models/unet_vein_ultrasound.pth", map_location=self.device)
         # self.model.load_state_dict(state_dict)
 
@@ -131,12 +129,10 @@ class SamusVeinSegmentor:
 
         roi_img = image_rgb[y1:y2, x1:x2, :]
 
-        # H, W, C -> 1, C, H, W，归一化到 0-1
         tensor = torch.from_numpy(roi_img).float() / 255.0  # type: ignore[arg-type]
         tensor = tensor.permute(2, 0, 1).unsqueeze(0)  # 1,3,H,W
 
         _, _, h, w = tensor.shape
-        # U-Net 通常要求尺寸是 32 的倍数，这里做 reflect padding
         pad_h = (32 - h % 32) % 32
         pad_w = (32 - w % 32) % 32
         if pad_h or pad_w:
@@ -144,18 +140,19 @@ class SamusVeinSegmentor:
 
         return tensor.to(self.device), (x1, y1, h, w)
 
-    def segment(self, image: np.ndarray, roi: ROIRegion) -> np.ndarray:
+    def segment(
+        self,
+        image: np.ndarray,
+        roi: ROIRegion,
+        parameters: Optional[Dict[str, float]] = None,
+    ) -> np.ndarray:
         """
         对单帧图像进行静脉血管分割，返回与输入图像同尺寸的 0/1 mask。
-
-        步骤：
-        1. 从整帧 image 中裁剪 ROI 区域，预处理为网络输入。
-        2. 调用 U-Net 模型得到 ROI 内的概率图。
-        3. 将 ROI 内的二值 mask 贴回整张图，其余区域为 0。
+        可选参数：
+        - threshold: 概率阈值，默认 0.5
         """
         self._ensure_initialized()
         if self.model is None:
-            # 无有效模型时，退回到全 0 mask，保证接口可用
             if image.ndim == 2:
                 height, width = image.shape
             else:
@@ -177,12 +174,13 @@ class SamusVeinSegmentor:
             pred = self.model(roi_tensor)  # 1,1,H',W'
             pred = torch.sigmoid(pred)
 
-        # 去掉 padding，只保留原始 ROI 尺寸
         pred = pred[:, :, :roi_h, :roi_w]
         prob_mask = pred[0, 0].cpu().numpy()
 
-        # 简单阈值 0.5 生成 0/1 mask
-        roi_mask = (prob_mask > 0.5).astype(np.uint8)
+        params = parameters or {}
+        threshold = float(params.get("threshold", 0.5))
+
+        roi_mask = (prob_mask > threshold).astype(np.uint8)
 
         full_mask = np.zeros((height, width), dtype=np.uint8)
         full_mask[y1 : y1 + roi_h, x1 : x1 + roi_w] = roi_mask
@@ -192,20 +190,24 @@ class SamusVeinSegmentor:
 
 class CVVeinSegmentor:
     """
-    使用传统 OpenCV 图像处理完成静脉分割：
-    - 在 ROI 内进行灰度化、对比度增强、平滑；
-    - 使用 Otsu 自适应阈值生成二值图；
-    - 进行形态学闭运算与开运算去噪；
-    - 返回与输入图像同尺寸的 0/1 mask。
+    使用传统 OpenCV 图像处理完成静脉分割（基础版）。
+    参数（parameters）：
+    - blur_kernel_size: 高斯模糊核大小（奇数），默认 5
+    - clahe_clip_limit: CLAHE 对比度限制，默认 2.0
+    - clahe_tile_grid_size: CLAHE 网格大小，默认 8
+    - morph_kernel_size: 形态学核大小（奇数），默认 3
+    - morph_close_iterations: 闭运算迭代次数，默认 2
+    - morph_open_iterations: 开运算迭代次数，默认 1
     """
 
-    def segment(self, image: np.ndarray, roi: ROIRegion) -> np.ndarray:
+    def segment(
+        self, image: np.ndarray, roi: ROIRegion, parameters: Optional[Dict[str, float]] = None
+    ) -> np.ndarray:
         if image.ndim == 2:
             height, width = image.shape
             gray = image
         else:
             height, width = image.shape[:2]
-            # decode_image_from_data_url 返回的是 RGB，这里按 RGB 转灰度
             gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
 
         x1 = max(0, int(roi.x))
@@ -219,20 +221,29 @@ class CVVeinSegmentor:
 
         roi_img = gray[y1:y2, x1:x2]
 
-        # 预处理：高斯模糊 + CLAHE 提升静脉对比度
-        blurred = cv2.GaussianBlur(roi_img, (5, 5), 0)
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        params = parameters or {}
+        blur_ksize = int(params.get("blur_kernel_size", 5))
+        if blur_ksize % 2 == 0:
+            blur_ksize += 1
+        clahe_clip = float(params.get("clahe_clip_limit", 2.0))
+        clahe_tile = int(params.get("clahe_tile_grid_size", 8))
+        morph_ksize = int(params.get("morph_kernel_size", 3))
+        if morph_ksize % 2 == 0:
+            morph_ksize += 1
+        close_iter = int(params.get("morph_close_iterations", 2))
+        open_iter = int(params.get("morph_open_iterations", 1))
+
+        blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
         enhanced = clahe.apply(blurred)
 
-        # Otsu 自适应阈值，反色使静脉为白色（1），背景为黑色（0）
         _, thresh = cv2.threshold(
             enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
 
-        # 形态学操作：闭运算填补静脉内部小空洞，再开运算去除小噪声
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
-        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=1)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_ksize, morph_ksize))
+        closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
+        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=open_iter)
 
         roi_mask = (opened > 0).astype(np.uint8)
 
@@ -240,3 +251,127 @@ class CVVeinSegmentor:
         full_mask[y1:y2, x1:x2] = roi_mask
 
         return full_mask
+
+
+class EnhancedCVVeinSegmentor:
+    """
+    增强版传统 CV 静脉分割：
+    - 使用 Frangi 血管滤波器增强管状/静脉样结构；
+    - 结合暗区域（Otsu 阈值）检测静脉低回声区域；
+    - 通过形态学操作和面积/形状/位置约束筛选静脉候选；
+    - 输出与整张图像同尺寸的 0/1 mask。
+
+    参数（parameters）：
+    - frangi_scale_min / frangi_scale_max / frangi_scale_step
+    - frangi_threshold: Frangi 概率阈值，默认 0.1
+    - area_min / area_max: 轮廓面积过滤
+    - aspect_ratio_min / aspect_ratio_max: 宽高比过滤
+    - center_band_top / center_band_bottom: 垂直方向中心带（相对 ROI 高度）
+    - morph_kernel_size / morph_close_iterations / morph_open_iterations
+    """
+
+    def segment(
+        self, image: np.ndarray, roi: ROIRegion, parameters: Optional[Dict[str, float]] = None
+    ) -> np.ndarray:
+        if image.ndim == 2:
+            height, width = image.shape
+            gray = image
+        else:
+            height, width = image.shape[:2]
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        x1 = max(0, int(roi.x))
+        y1 = max(0, int(roi.y))
+        x2 = min(width, x1 + int(roi.width))
+        y2 = min(height, y1 + int(roi.height))
+
+        if x2 <= x1 or y2 <= y1:
+            logger.warning("Invalid ROI for enhanced CV segmentation, return empty mask")
+            return np.zeros((height, width), dtype=np.uint8)
+
+        roi_img = gray[y1:y2, x1:x2]
+
+        params = parameters or {}
+        blur_ksize = int(params.get("blur_kernel_size", 5))
+        if blur_ksize % 2 == 0:
+            blur_ksize += 1
+        clahe_clip = float(params.get("clahe_clip_limit", 3.0))
+        clahe_tile = int(params.get("clahe_tile_grid_size", 8))
+
+        frangi_scale_min = float(params.get("frangi_scale_min", 2.0))
+        frangi_scale_max = float(params.get("frangi_scale_max", 8.0))
+        frangi_scale_step = float(params.get("frangi_scale_step", 2.0))
+        frangi_threshold = float(params.get("frangi_threshold", 0.1))
+
+        area_min = float(params.get("area_min", 200.0))
+        area_max = float(params.get("area_max", 5000.0))
+        aspect_ratio_min = float(params.get("aspect_ratio_min", 0.5))
+        aspect_ratio_max = float(params.get("aspect_ratio_max", 2.0))
+        center_band_top = float(params.get("center_band_top", 0.3))
+        center_band_bottom = float(params.get("center_band_bottom", 0.7))
+
+        morph_ksize = int(params.get("morph_kernel_size", 7))
+        if morph_ksize % 2 == 0:
+            morph_ksize += 1
+        close_iter = int(params.get("morph_close_iterations", 2))
+        open_iter = int(params.get("morph_open_iterations", 1))
+
+        blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
+        enhanced = clahe.apply(blurred)
+
+        enhanced_norm = enhanced.astype(np.float32) / 255.0
+        try:
+            vessel_prob = frangi(
+                enhanced_norm,
+                scale_range=(frangi_scale_min, frangi_scale_max),
+                scale_step=frangi_scale_step,
+                black_ridges=True,
+            )
+        except Exception as exc:  # pragma: no cover - 防御性回退
+            logger.warning("Frangi filter failed, fallback to zeros: %s", exc)
+            vessel_prob = np.zeros_like(enhanced_norm, dtype=np.float32)
+
+        _, dark_mask = cv2.threshold(
+            enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
+        )
+
+        vessel_binary = np.logical_and(vessel_prob > frangi_threshold, dark_mask > 0).astype(
+            np.uint8
+        ) * 255
+
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_ksize, morph_ksize))
+        closed = cv2.morphologyEx(vessel_binary, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
+        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=open_iter)
+
+        contours, _ = cv2.findContours(
+            opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        roi_h = y2 - y1
+        mask_roi = np.zeros_like(roi_img, dtype=np.uint8)
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < area_min or area > area_max:
+                continue
+
+            x, y, w, h = cv2.boundingRect(cnt)
+            if h == 0:
+                continue
+            aspect_ratio = float(w) / h
+
+            if not (aspect_ratio_min < aspect_ratio < aspect_ratio_max):
+                continue
+
+            center_y = y + h / 2.0
+            if not (center_band_top * roi_h < center_y < center_band_bottom * roi_h):
+                continue
+
+            cv2.drawContours(mask_roi, [cnt], -1, 1, thickness=-1)
+
+        full_mask = np.zeros((height, width), dtype=np.uint8)
+        full_mask[y1:y2, x1:x2] = mask_roi
+
+        return full_mask
+

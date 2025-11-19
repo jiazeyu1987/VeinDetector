@@ -27,7 +27,12 @@ from models import (
 from video_processor import VideoProcessor
 from vein_detector import VeinDetector, VeinRegion
 from roi_handler import ROIHandler
-from samus_inference import SamusVeinSegmentor, CVVeinSegmentor, decode_image_from_data_url
+from samus_inference import (
+    SamusVeinSegmentor,
+    CVVeinSegmentor,
+    EnhancedCVVeinSegmentor,
+    decode_image_from_data_url,
+)
 
 # 设置日志
 logging.basicConfig(level=logging.INFO)
@@ -66,6 +71,7 @@ vein_detector = VeinDetector()
 roi_handler = ROIHandler()
 samus_segmentor = SamusVeinSegmentor()
 cv_segmentor = CVVeinSegmentor()
+enhanced_cv_segmentor = EnhancedCVVeinSegmentor()
 
 # 任务存储（实际项目中应使用数据库）
 processing_tasks: Dict[str, VideoProcessingTask] = {}
@@ -354,9 +360,12 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
 
     # 如果前端选择了传统 CV 分割，直接走 OpenCV 流程
     cv_model_name = (request.model_name or "").lower()
-    if cv_model_name in {"cv", "cv-vein", "opencv"}:
+    if cv_model_name in {"cv", "cv-vein", "opencv", "cv_enhanced", "cv-advanced", "cv-frangi"}:
         try:
-            mask = cv_segmentor.segment(image, request.roi)
+            if cv_model_name in {"cv_enhanced", "cv-advanced", "cv-frangi"}:
+                mask = enhanced_cv_segmentor.segment(image, request.roi)
+            else:
+                mask = cv_segmentor.segment(image, request.roi)
         except Exception as exc:
             logger.exception("CV vein segmentation failed")
             raise HTTPException(status_code=500, detail="静脉分割失败") from exc

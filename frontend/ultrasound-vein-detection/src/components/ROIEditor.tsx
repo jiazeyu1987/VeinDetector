@@ -1,5 +1,4 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Square, Trash2 } from 'lucide-react';
+﻿import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ROI } from '../api/types';
 
 interface ROIEditorProps {
@@ -9,6 +8,7 @@ interface ROIEditorProps {
   onROIChange: (roi: ROI) => void;
   onROIClear: () => void;
   className?: string;
+  enabled?: boolean;
 }
 
 interface HandlePosition {
@@ -25,6 +25,7 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
   onROIChange,
   onROIClear,
   className = '',
+  enabled = true,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,7 +36,6 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
   const [currentPoint, setCurrentPoint] = useState<{ x: number; y: number } | null>(null);
   const [activeHandle, setActiveHandle] = useState<HandlePosition['position'] | null>(null);
   const [draggedHandle, setDraggedHandle] = useState<number | null>(null);
-  const [canDraw, setCanDraw] = useState(false);
 
   const getCanvasCoordinates = useCallback(
     (e: React.MouseEvent) => {
@@ -88,6 +88,9 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (!enabled) {
+        return;
+      }
       const point = getCanvasCoordinates(e);
       if (currentROI) {
         const handleIndex = getHandleAtPoint(point.x, point.y, currentROI);
@@ -103,14 +106,11 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
           return;
         }
       }
-      if (!canDraw) {
-        return;
-      }
       setIsDrawing(true);
       setStartPoint(point);
       setCurrentPoint(point);
     },
-    [getCanvasCoordinates, currentROI, getHandleAtPoint, getHandlePositions, isPointInROI, canDraw],
+    [getCanvasCoordinates, currentROI, getHandleAtPoint, getHandlePositions, isPointInROI, enabled],
   );
 
   const handleMouseMove = useCallback(
@@ -204,7 +204,6 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       };
       if (roi.width > 10 && roi.height > 10) {
         onROIChange(roi);
-        setCanDraw(false);
       }
     }
     setIsDrawing(false);
@@ -285,9 +284,8 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
-    const rect = container.getBoundingClientRect();
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+    canvas.width = imageWidth;
+    canvas.height = imageHeight;
     draw();
   }, [imageWidth, imageHeight, draw]);
 
@@ -297,6 +295,7 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
 
   const getMouseCursor = useCallback(
     (e: React.MouseEvent) => {
+      if (!enabled) return 'default';
       if (!currentROI) return 'crosshair';
       const point = getCanvasCoordinates(e);
       const handleIndex = getHandleAtPoint(point.x, point.y, currentROI);
@@ -308,75 +307,11 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       }
       return 'crosshair';
     },
-    [currentROI, getCanvasCoordinates, getHandleAtPoint, getHandlePositions, isPointInROI],
+    [currentROI, getCanvasCoordinates, getHandleAtPoint, getHandlePositions, isPointInROI, enabled],
   );
 
   return (
     <div className={`relative ${className}`}>
-      <div className="absolute top-4 left-4 z-10 flex space-x-2">
-        <button
-          onClick={() => {
-            if (currentROI) {
-              onROIClear();
-              setCanDraw(false);
-            }
-          }}
-          disabled={!currentROI}
-          className="px-3 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm flex items-center space-x-1 transition-colors"
-          title="清除ROI"
-        >
-          <Trash2 size={14} />
-          <span>清除ROI</span>
-        </button>
-        <button
-          onClick={() => {
-            onROIClear();
-            setIsDrawing(false);
-            setStartPoint(null);
-            setCurrentPoint(null);
-            setCanDraw(true);
-          }}
-          className={`px-3 py-1 ${
-            canDraw ? 'bg-green-500 hover:bg-green-400' : 'bg-gray-600 hover:bg-gray-500'
-          } text-white rounded text-sm flex items-center space-x-1 transition-colors`}
-          title="绘制ROI"
-        >
-          <Square size={14} />
-          <span>绘制ROI</span>
-        </button>
-        <button
-          onClick={() => {
-            if (currentROI) {
-              const newROI: ROI = {
-                ...currentROI,
-                width: currentROI.width * 0.8,
-                height: currentROI.height * 0.8,
-              };
-              newROI.x = currentROI.x + (currentROI.width - newROI.width) / 2;
-              newROI.y = currentROI.y + (currentROI.height - newROI.height) / 2;
-              onROIChange(newROI);
-            }
-          }}
-          disabled={!currentROI}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-sm flex items-center space-x-1 transition-colors"
-          title="缩小ROI"
-        >
-          <Square size={14} />
-          <span>缩小</span>
-        </button>
-      </div>
-      {currentROI && (
-        <div className="absolute top-4 right-4 bg-black bg-opacity-75 text-white px-3 py-2 rounded text-sm">
-          <div>ROI信息:</div>
-          <div>
-            位置: ({Math.round(currentROI.x)}, {Math.round(currentROI.y)})
-          </div>
-          <div>
-            尺寸: {Math.round(currentROI.width)} × {Math.round(currentROI.height)}
-          </div>
-          <div>面积: {Math.round(currentROI.width * currentROI.height)} 像素²</div>
-        </div>
-      )}
       <div
         ref={containerRef}
         className="relative w-full h-full border border-gray-600 rounded"
@@ -387,19 +322,6 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
         onMouseLeave={handleMouseUp}
       >
         <canvas ref={canvasRef} className="absolute inset-0" />
-        <div className="absolute bottom-4 left-4 bg-black bg-opacity-75 text-white px-3 py-2 rounded text-sm">
-          {!currentROI && !isDrawing ? (
-            <div>点击“绘制ROI”按钮后，在视频区域点击并拖拽来绘制ROI</div>
-          ) : isDrawing ? (
-            <div>释放鼠标完成绘制</div>
-          ) : (
-            <div>
-              <div>拖拽ROI来移动位置</div>
-              <div>拖拽控制点来调整大小</div>
-              <div>点击“绘制ROI”按钮重新绘制</div>
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
