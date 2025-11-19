@@ -203,6 +203,14 @@ class CVVeinSegmentor:
     def segment(
         self, image: np.ndarray, roi: ROIRegion, parameters: Optional[Dict[str, float]] = None
     ) -> np.ndarray:
+        logger.info(
+            "EnhancedCVVeinSegmentor.segment roi=(x=%s,y=%s,w=%s,h=%s), params=%s",
+            getattr(roi, "x", None),
+            getattr(roi, "y", None),
+            getattr(roi, "width", None),
+            getattr(roi, "height", None),
+            parameters,
+        )
         if image.ndim == 2:
             height, width = image.shape
             gray = image
@@ -286,7 +294,15 @@ class EnhancedCVVeinSegmentor:
         y2 = min(height, y1 + int(roi.height))
 
         if x2 <= x1 or y2 <= y1:
-            logger.warning("Invalid ROI for enhanced CV segmentation, return empty mask")
+            logger.warning(
+                "Invalid ROI for enhanced CV segmentation, image_size=(%s,%s), x1=%s,x2=%s,y1=%s,y2=%s",
+                width,
+                height,
+                x1,
+                x2,
+                y1,
+                y2,
+            )
             return np.zeros((height, width), dtype=np.uint8)
 
         roi_img = gray[y1:y2, x1:x2]
@@ -336,9 +352,20 @@ class EnhancedCVVeinSegmentor:
             enhanced, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
         )
 
-        vessel_binary = np.logical_and(vessel_prob > frangi_threshold, dark_mask > 0).astype(
-            np.uint8
-        ) * 255
+        vessel_mask = vessel_prob > frangi_threshold
+        combined_mask = np.logical_and(vessel_mask, dark_mask > 0)
+        vessel_binary = combined_mask.astype(np.uint8) * 255
+
+        logger.info(
+            "Enhanced CV intermediate: roi_size=(%s,%s), frangi_threshold=%s, "
+            "dark_pixels=%s, vessel_pixels=%s, combined_pixels=%s",
+            roi_img.shape[1],
+            roi_img.shape[0],
+            frangi_threshold,
+            int((dark_mask > 0).sum()),
+            int(vessel_mask.sum()),
+            int(combined_mask.sum()),
+        )
 
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_ksize, morph_ksize))
         closed = cv2.morphologyEx(vessel_binary, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
@@ -347,13 +374,21 @@ class EnhancedCVVeinSegmentor:
         contours, _ = cv2.findContours(
             opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
+        logger.info("Enhanced CV found %s raw contours", len(contours))
 
         roi_h = y2 - y1
         mask_roi = np.zeros_like(roi_img, dtype=np.uint8)
+        kept_contours = 0
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area < area_min or area > area_max:
+                logger.debug(
+                    "Contour filtered by area: %s (allowed [%s,%s])",
+                    area,
+                    area_min,
+                    area_max,
+                )
                 continue
 
             x, y, w, h = cv2.boundingRect(cnt)
@@ -362,13 +397,33 @@ class EnhancedCVVeinSegmentor:
             aspect_ratio = float(w) / h
 
             if not (aspect_ratio_min < aspect_ratio < aspect_ratio_max):
+                logger.debug(
+                    "Contour filtered by aspect_ratio: %s (allowed (%s,%s))",
+                    aspect_ratio,
+                    aspect_ratio_min,
+                    aspect_ratio_max,
+                )
                 continue
 
             center_y = y + h / 2.0
             if not (center_band_top * roi_h < center_y < center_band_bottom * roi_h):
+                logger.debug(
+                    "Contour filtered by center_band: center_y=%s, band=(%s,%s) of roi_h=%s",
+                    center_y,
+                    center_band_top,
+                    center_band_bottom,
+                    roi_h,
+                )
                 continue
 
             cv2.drawContours(mask_roi, [cnt], -1, 1, thickness=-1)
+            kept_contours += 1
+
+        logger.info(
+            "Enhanced CV kept %s contours after filtering, mask_roi_pixels=%s",
+            kept_contours,
+            int(mask_roi.sum()),
+        )
 
         full_mask = np.zeros((height, width), dtype=np.uint8)
         full_mask[y1:y2, x1:x2] = mask_roi

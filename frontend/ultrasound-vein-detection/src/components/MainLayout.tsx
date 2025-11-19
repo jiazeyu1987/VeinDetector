@@ -47,19 +47,23 @@ export const MainLayout: React.FC = () => {
   const [panY, setPanY] = useState(0);
   const [isROIMode, setIsROIMode] = useState(false);
   const [enhancedCVParams, setEnhancedCVParams] = useState<EnhancedCVParams>({
-    blurKernelSize: 3,
-    claheClipLimit: 2.0,
+    // 预处理
+    blurKernelSize: 5,
+    claheClipLimit: 2.5,
     claheTileGridSize: 8,
-    frangiScaleMin: 1.5,
-    frangiScaleMax: 5.0,
+    // Frangi 血管滤波
+    frangiScaleMin: 1.0,
+    frangiScaleMax: 3.0,
     frangiScaleStep: 0.5,
-    frangiThreshold: 0.04,
-    areaMin: 300,
-    areaMax: 3500,
-    aspectRatioMin: 0.6,
-    aspectRatioMax: 1.6,
-    centerBandTop: 0.4,
-    centerBandBottom: 0.8,
+    frangiThreshold: 0.08,
+    // 几何与位置筛选（相对更宽松，保证至少能出一个 mask）
+    areaMin: 100,
+    areaMax: 4000,
+    aspectRatioMin: 0.5,
+    aspectRatioMax: 2.0,
+    centerBandTop: 0.3,
+    centerBandBottom: 0.9,
+    // 形态学
     morphKernelSize: 5,
     morphCloseIterations: 2,
     morphOpenIterations: 1,
@@ -88,6 +92,8 @@ export const MainLayout: React.FC = () => {
   const displayedTotalFrames = currentVideo ? Math.max(1, Math.floor(currentVideo.frameCount / frameStep)) : 0;
   const timeAxisProgress =
     displayedTotalFrames > 1 ? (currentFrame / (displayedTotalFrames - 1)) * 100 : 0;
+  const isEnhancedCV =
+    ['cv_enhanced', 'cv-advanced', 'cv-frangi'].includes(segmentationModel.toLowerCase());
 
   const handleFileUpload = useCallback(
     async (file: File) => {
@@ -181,6 +187,14 @@ export const MainLayout: React.FC = () => {
           morph_open_iterations: enhancedCVParams.morphOpenIterations,
         };
       }
+      // 调试日志：查看前端实际发送的模型和参数
+      // eslint-disable-next-line no-console
+      console.log('startAnalysis request', {
+        modelName: segmentationModel,
+        cvName,
+        hasParameters: Boolean(parameters),
+        parameters,
+      });
       const response = await apiClient.segmentCurrentFrame({
         imageDataUrl,
         roi: currentROI,
@@ -278,7 +292,10 @@ export const MainLayout: React.FC = () => {
   }, [currentVideo]);
 
   const handleImageWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
+    // 某些环境下 wheel 监听会是 passive，直接 preventDefault 会报错
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     const delta = e.deltaY;
     const zoomStep = 0.1;
     setZoom(prevZoom => {
@@ -624,7 +641,7 @@ export const MainLayout: React.FC = () => {
         />
 
         <div
-          className="bg-gray-800 flex flex-col"
+          className="bg-gray-800 flex flex-col overflow-y-auto"
           style={{ width: `${rightPanelSize}%` }}
         >
           <div className="p-4 border-b border-gray-700">
@@ -740,6 +757,297 @@ export const MainLayout: React.FC = () => {
                       <option value={10}>每 10 帧</option>
                     </select>
                   </label>
+                </div>
+              </div>
+            </div>
+          )}
+          {showSettingsPanel && isEnhancedCV && (
+            <div className="flex-1 p-4 text-sm text-gray-200 space-y-3">
+              <div>
+                <h3 className="font-medium mb-2">增强 OpenCV 参数</h3>
+                <div className="space-y-3">
+                  <div>
+                    <h4 className="text-xs text-gray-400 mb-1">预处理</h4>
+                    <div className="space-y-1">
+                      <label className="flex items-center justify-between text-xs">
+                        <span>模糊核大小</span>
+                        <input
+                          type="number"
+                          min={1}
+                          step={2}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.blurKernelSize}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              blurKernelSize: Number(e.target.value) || 1,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>CLAHE 对比度</span>
+                        <input
+                          type="number"
+                          min={0.5}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.claheClipLimit}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              claheClipLimit: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>CLAHE 网格大小</span>
+                        <input
+                          type="number"
+                          min={2}
+                          step={1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.claheTileGridSize}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              claheTileGridSize: Number(e.target.value) || 1,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs text-gray-400 mb-1">Frangi 血管滤波</h4>
+                    <div className="space-y-1">
+                      <label className="flex items-center justify-between text-xs">
+                        <span>尺度最小</span>
+                        <input
+                          type="number"
+                          min={0.5}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.frangiScaleMin}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              frangiScaleMin: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>尺度最大</span>
+                        <input
+                          type="number"
+                          min={enhancedCVParams.frangiScaleMin}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.frangiScaleMax}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              frangiScaleMax: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>尺度步长</span>
+                        <input
+                          type="number"
+                          min={0.1}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.frangiScaleStep}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              frangiScaleStep: Number(e.target.value) || 0.1,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>Frangi 阈值</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.frangiThreshold}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              frangiThreshold: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs text-gray-400 mb-1">几何与位置筛选</h4>
+                    <div className="space-y-1">
+                      <label className="flex items-center justify-between text-xs">
+                        <span>面积最小</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={10}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.areaMin}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              areaMin: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>面积最大</span>
+                        <input
+                          type="number"
+                          min={enhancedCVParams.areaMin}
+                          step={10}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.areaMax}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              areaMax: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>长宽比最小</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.aspectRatioMin}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              aspectRatioMin: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>长宽比最大</span>
+                        <input
+                          type="number"
+                          min={enhancedCVParams.aspectRatioMin}
+                          step={0.1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.aspectRatioMax}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              aspectRatioMax: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>中心带顶部(0–1)</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.centerBandTop}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              centerBandTop: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>中心带底部(0–1)</span>
+                        <input
+                          type="number"
+                          min={enhancedCVParams.centerBandTop}
+                          max={1}
+                          step={0.05}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.centerBandBottom}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              centerBandBottom: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h4 className="text-xs text-gray-400 mb-1">形态学</h4>
+                    <div className="space-y-1">
+                      <label className="flex items-center justify-between text-xs">
+                        <span>核大小</span>
+                        <input
+                          type="number"
+                          min={1}
+                          step={2}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.morphKernelSize}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              morphKernelSize: Number(e.target.value) || 1,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>闭运算迭代</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.morphCloseIterations}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              morphCloseIterations: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs">
+                        <span>开运算迭代</span>
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          className="w-24 bg-gray-700 border border-gray-600 rounded px-1 py-0.5 text-xs text-center"
+                          value={enhancedCVParams.morphOpenIterations}
+                          onChange={e =>
+                            setEnhancedCVParams(prev => ({
+                              ...prev,
+                              morphOpenIterations: Number(e.target.value) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
