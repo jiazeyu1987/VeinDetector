@@ -160,7 +160,7 @@ async def get_processing_status(task_id: str):
     """获取处理进度"""
     if task_id not in processing_tasks:
         raise HTTPException(status_code=404, detail="任务不存在")
-
+ 
     task = processing_tasks[task_id]
 
     # 计算进度
