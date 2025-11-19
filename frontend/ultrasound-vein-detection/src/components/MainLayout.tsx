@@ -6,6 +6,26 @@ import { VeinVisualization } from './VeinVisualization';
 import { apiClient, mockApi } from '../api/client';
 import { VideoInfo, ROI, VeinDetectionResult } from '../api/types';
 
+
+type EnhancedCVParams = {
+  blurKernelSize: number;
+  claheClipLimit: number;
+  claheTileGridSize: number;
+  frangiScaleMin: number;
+  frangiScaleMax: number;
+  frangiScaleStep: number;
+  frangiThreshold: number;
+  areaMin: number;
+  areaMax: number;
+  aspectRatioMin: number;
+  aspectRatioMax: number;
+  centerBandTop: number;
+  centerBandBottom: number;
+  morphKernelSize: number;
+  morphCloseIterations: number;
+  morphOpenIterations: number;
+};
+
 export const MainLayout: React.FC = () => {
   const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
@@ -26,6 +46,24 @@ export const MainLayout: React.FC = () => {
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isROIMode, setIsROIMode] = useState(false);
+  const [enhancedCVParams, setEnhancedCVParams] = useState<EnhancedCVParams>({
+    blurKernelSize: 3,
+    claheClipLimit: 2.0,
+    claheTileGridSize: 8,
+    frangiScaleMin: 1.5,
+    frangiScaleMax: 5.0,
+    frangiScaleStep: 0.5,
+    frangiThreshold: 0.04,
+    areaMin: 300,
+    areaMax: 3500,
+    aspectRatioMin: 0.6,
+    aspectRatioMax: 1.6,
+    centerBandTop: 0.4,
+    centerBandBottom: 0.8,
+    morphKernelSize: 5,
+    morphCloseIterations: 2,
+    morphOpenIterations: 1,
+  });
   const previewUrlRef = useRef<string | null>(null);
   const isPanningRef = useRef(false);
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -121,10 +159,33 @@ export const MainLayout: React.FC = () => {
       setError(null);
       const canvas = frameCanvasRef.current;
       const imageDataUrl = canvas.toDataURL('image/png');
+      let parameters: Record<string, number> | undefined;
+      const cvName = segmentationModel.toLowerCase();
+      if (['cv_enhanced', 'cv-advanced', 'cv-frangi'].includes(cvName)) {
+        parameters = {
+          blur_kernel_size: enhancedCVParams.blurKernelSize,
+          clahe_clip_limit: enhancedCVParams.claheClipLimit,
+          clahe_tile_grid_size: enhancedCVParams.claheTileGridSize,
+          frangi_scale_min: enhancedCVParams.frangiScaleMin,
+          frangi_scale_max: enhancedCVParams.frangiScaleMax,
+          frangi_scale_step: enhancedCVParams.frangiScaleStep,
+          frangi_threshold: enhancedCVParams.frangiThreshold,
+          area_min: enhancedCVParams.areaMin,
+          area_max: enhancedCVParams.areaMax,
+          aspect_ratio_min: enhancedCVParams.aspectRatioMin,
+          aspect_ratio_max: enhancedCVParams.aspectRatioMax,
+          center_band_top: enhancedCVParams.centerBandTop,
+          center_band_bottom: enhancedCVParams.centerBandBottom,
+          morph_kernel_size: enhancedCVParams.morphKernelSize,
+          morph_close_iterations: enhancedCVParams.morphCloseIterations,
+          morph_open_iterations: enhancedCVParams.morphOpenIterations,
+        };
+      }
       const response = await apiClient.segmentCurrentFrame({
         imageDataUrl,
         roi: currentROI,
         modelName: segmentationModel,
+        parameters,
       });
       if (response.success && response.data) {
         setSegmentationMask(response.data.mask);
@@ -138,7 +199,7 @@ export const MainLayout: React.FC = () => {
       setError('分析失败: ' + (err as Error).message);
       setIsAnalyzing(false);
     }
-  }, [currentVideo, currentROI, segmentationModel]);
+  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams]);
 
   const handleMouseDown = useCallback(() => {
     setIsResizing(true);
@@ -713,6 +774,18 @@ export const MainLayout: React.FC = () => {
     </div>
   );
 };
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

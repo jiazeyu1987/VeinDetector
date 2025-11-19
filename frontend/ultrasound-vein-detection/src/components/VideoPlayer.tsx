@@ -107,8 +107,26 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         if (ctx) {
           ctx.fillStyle = '#0f172a';
           ctx.fillRect(0, 0, width, height);
-          if (video && video.readyState >= 2) {
-            ctx.drawImage(video, 0, 0, width, height);
+
+          if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+            const videoAspect = video.videoWidth / video.videoHeight;
+            const canvasAspect = width / height;
+
+            let drawWidth = width;
+            let drawHeight = height;
+
+            if (videoAspect > canvasAspect) {
+              drawWidth = width;
+              drawHeight = width / videoAspect;
+            } else {
+              drawHeight = height;
+              drawWidth = height * videoAspect;
+            }
+
+            const offsetX = (width - drawWidth) / 2;
+            const offsetY = (height - drawHeight) / 2;
+
+            ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
           }
         }
       }

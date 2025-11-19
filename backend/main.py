@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query
+﻿from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -363,7 +363,7 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
     if cv_model_name in {"cv", "cv-vein", "opencv", "cv_enhanced", "cv-advanced", "cv-frangi"}:
         try:
             if cv_model_name in {"cv_enhanced", "cv-advanced", "cv-frangi"}:
-                mask = enhanced_cv_segmentor.segment(image, request.roi)
+                mask = enhanced_cv_segmentor.segment(image, request.roi, request.parameters or None)
             else:
                 mask = cv_segmentor.segment(image, request.roi)
         except Exception as exc:
@@ -520,3 +520,5 @@ if __name__ == "__main__":
         reload=True,
         log_level="info"
     )
+
+

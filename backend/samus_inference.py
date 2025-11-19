@@ -1,4 +1,4 @@
-import base64
+﻿import base64
 import logging
 from io import BytesIO
 from typing import Dict, Optional, Tuple
@@ -222,7 +222,7 @@ class CVVeinSegmentor:
         roi_img = gray[y1:y2, x1:x2]
 
         params = parameters or {}
-        blur_ksize = int(params.get("blur_kernel_size", 5))
+        blur_ksize = int(params.get("blur_kernel_size", 3))
         if blur_ksize % 2 == 0:
             blur_ksize += 1
         clahe_clip = float(params.get("clahe_clip_limit", 2.0))
@@ -292,25 +292,25 @@ class EnhancedCVVeinSegmentor:
         roi_img = gray[y1:y2, x1:x2]
 
         params = parameters or {}
-        blur_ksize = int(params.get("blur_kernel_size", 5))
+        blur_ksize = int(params.get("blur_kernel_size", 3))
         if blur_ksize % 2 == 0:
             blur_ksize += 1
-        clahe_clip = float(params.get("clahe_clip_limit", 3.0))
+        clahe_clip = float(params.get("clahe_clip_limit", 2.0))
         clahe_tile = int(params.get("clahe_tile_grid_size", 8))
 
-        frangi_scale_min = float(params.get("frangi_scale_min", 2.0))
-        frangi_scale_max = float(params.get("frangi_scale_max", 8.0))
-        frangi_scale_step = float(params.get("frangi_scale_step", 2.0))
-        frangi_threshold = float(params.get("frangi_threshold", 0.1))
+        frangi_scale_min = float(params.get("frangi_scale_min", 1.5))
+        frangi_scale_max = float(params.get("frangi_scale_max", 5.0))
+        frangi_scale_step = float(params.get("frangi_scale_step", 0.5))
+        frangi_threshold = float(params.get("frangi_threshold", 0.04))
 
-        area_min = float(params.get("area_min", 200.0))
-        area_max = float(params.get("area_max", 5000.0))
-        aspect_ratio_min = float(params.get("aspect_ratio_min", 0.5))
-        aspect_ratio_max = float(params.get("aspect_ratio_max", 2.0))
-        center_band_top = float(params.get("center_band_top", 0.3))
-        center_band_bottom = float(params.get("center_band_bottom", 0.7))
+        area_min = float(params.get("area_min", 300.0))
+        area_max = float(params.get("area_max", 3500.0))
+        aspect_ratio_min = float(params.get("aspect_ratio_min", 0.6))
+        aspect_ratio_max = float(params.get("aspect_ratio_max", 1.6))
+        center_band_top = float(params.get("center_band_top", 0.4))
+        center_band_bottom = float(params.get("center_band_bottom", 0.8))
 
-        morph_ksize = int(params.get("morph_kernel_size", 7))
+        morph_ksize = int(params.get("morph_kernel_size", 5))
         if morph_ksize % 2 == 0:
             morph_ksize += 1
         close_iter = int(params.get("morph_close_iterations", 2))
@@ -374,4 +374,5 @@ class EnhancedCVVeinSegmentor:
         full_mask[y1:y2, x1:x2] = mask_roi
 
         return full_mask
+
 

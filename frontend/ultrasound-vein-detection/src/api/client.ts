@@ -91,6 +91,7 @@ class ApiClient {
     imageDataUrl: string;
     roi: ROI;
     modelName: string;
+    parameters?: Record<string, number>;
   }): Promise<ApiResponse<SamusSegmentationResponse>> {
     const response = await fetch(`${BACKEND_BASE_URL}/analysis/samus`, {
       method: 'POST',
@@ -106,6 +107,7 @@ class ApiClient {
           height: Math.round(payload.roi.height),
         },
         model_name: payload.modelName,
+        parameters: payload.parameters,
       }),
     });
 
