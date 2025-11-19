@@ -378,11 +378,11 @@ export const MainLayout: React.FC = () => {
           className="bg-gray-800 border-r border-gray-700 flex flex-col"
           style={{ width: `${leftPanelSize}%` }}
         >
-                    <div className="p-4 border-b border-gray-700">
+                              <div className="p-4 border-b border-gray-700">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2 text-sm text-gray-300">
-                  <span>��֡:</span>
+                  <span>Frame step:</span>
                   <select
                     value={frameStep}
                     onChange={e => {
@@ -392,10 +392,10 @@ export const MainLayout: React.FC = () => {
                     }}
                     className="bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm focus:outline-none"
                   >
-                    <option value={1}>ÿ֡</option>
-                    <option value={2}>ÿ2֡</option>
-                    <option value={5}>ÿ5֡</option>
-                    <option value={10}>ÿ10֡</option>
+                    <option value={1}>Every frame</option>
+                    <option value={2}>Every 2 frames</option>
+                    <option value={5}>Every 5 frames</option>
+                    <option value={10}>Every 10 frames</option>
                   </select>
                 </div>
                 <div className="flex items-center space-x-2 ml-4">
@@ -404,7 +404,7 @@ export const MainLayout: React.FC = () => {
                     disabled={!currentROI}
                     className="px-3 py-1 bg-red-600 hover:bg-red-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs"
                   >
-                    ɾ�� ROI
+                    Delete ROI
                   </button>
                   <button
                     onClick={() => setIsROIMode(prev => !prev)}
@@ -412,18 +412,18 @@ export const MainLayout: React.FC = () => {
                       isROIMode ? 'bg-green-500 hover:bg-green-400' : 'bg-gray-600 hover:bg-gray-500'
                     }`}
                   >
-                    ��ͼ ROI
+                    Draw ROI
                   </button>
                   <button
                     onClick={handleShrinkROI}
                     disabled={!currentROI}
                     className="px-3 py-1 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded text-xs"
                   >
-                    ��С ROI
+                    Shrink ROI
                   </button>
                   {currentROI && (
                     <span className="text-xs bg-blue-600 px-2 py-1 rounded text-white">
-                      ROI �ѹ���
+                      ROI selected
                     </span>
                   )}
                 </div>
@@ -713,6 +713,7 @@ export const MainLayout: React.FC = () => {
     </div>
   );
 };
+
 
 
 
