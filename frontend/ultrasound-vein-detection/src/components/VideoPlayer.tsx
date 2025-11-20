@@ -11,6 +11,9 @@ interface VideoPlayerProps {
   height?: number;
   className?: string;
   onCanvasRef?: (canvas: HTMLCanvasElement | null) => void;
+  onMouseMove?: (e: React.MouseEvent<HTMLCanvasElement>, grayscaleValue: number, x: number, y: number) => void;
+  onMouseLeave?: () => void;
+  showGrayscale?: boolean;
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -24,11 +27,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   height = 600,
   className = '',
   onCanvasRef,
+  onMouseMove,
+  onMouseLeave,
+  showGrayscale = false,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [mousePosition, setMousePosition] = useState<{ x: number; y: number; grayscale: number } | null>(null);
 
   const handleSeekToFrame = useCallback(
     (frame: number) => {
@@ -50,6 +57,60 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const handleNextFrame = useCallback(() => {
     handleSeekToFrame(currentFrame + 1);
   }, [currentFrame, handleSeekToFrame]);
+
+  // 获取鼠标位置的灰度值
+  const getGrayscaleValue = useCallback((canvas: HTMLCanvasElement, x: number, y: number): number => {
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return 0;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const canvasX = Math.floor((x - rect.left) * scaleX);
+    const canvasY = Math.floor((y - rect.top) * scaleY);
+
+    // 边界检查
+    if (canvasX < 0 || canvasX >= canvas.width || canvasY < 0 || canvasY >= canvas.height) {
+      return 0;
+    }
+
+    try {
+      const imageData = ctx.getImageData(canvasX, canvasY, 1, 1);
+      const data = imageData.data;
+      // 使用标准灰度转换公式: 0.299*R + 0.587*G + 0.114*B
+      const grayscale = Math.round(0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2]);
+      return grayscale;
+    } catch (error) {
+      return 0;
+    }
+  }, []);
+
+  // 处理鼠标移动事件
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!canvasRef.current) return;
+
+    const grayscaleValue = getGrayscaleValue(canvasRef.current, e.clientX, e.clientY);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const scaleX = canvasRef.current.width / rect.width;
+    const scaleY = canvasRef.current.height / rect.height;
+
+    const x = Math.floor((e.clientX - rect.left) * scaleX);
+    const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+    setMousePosition({ x, y, grayscale: grayscaleValue });
+
+    if (onMouseMove) {
+      onMouseMove(e, grayscaleValue, x, y);
+    }
+  }, [getGrayscaleValue, onMouseMove]);
+
+  // 处理鼠标离开事件
+  const handleCanvasMouseLeave = useCallback(() => {
+    if (onMouseLeave) {
+      onMouseLeave();
+    }
+  }, [onMouseLeave]);
 
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
@@ -170,6 +231,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
         width={width}
         height={height}
         className="w-full h-full bg-gray-800"
+        onMouseMove={handleCanvasMouseMove}
+        onMouseLeave={handleCanvasMouseLeave}
       />
 
       {isLoading && (
@@ -190,6 +253,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {String(Math.floor(videoDuration % 60)).padStart(2, '0')}
         </div>
       )}
-    </div>
+
+      </div>
   );
 };

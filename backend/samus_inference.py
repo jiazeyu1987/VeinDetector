@@ -15,12 +15,32 @@ from skimage.filters import frangi
 try:  # pragma: no cover - 环境相关补丁
     import torch.utils._pytree as _pytree
 
-    if not hasattr(_pytree, "register_pytree_node") and hasattr(
-        _pytree, "_register_pytree_node"
-    ):
-        _pytree.register_pytree_node = _pytree._register_pytree_node  # type: ignore[attr-defined]
+    # 强制注册不兼容函数的安全包装器
+    if hasattr(_pytree, "register_pytree_node"):
+        orig_func = _pytree.register_pytree_node
+
+        def _safe_register_pytree_node(*args, **kwargs):
+            # 移除不支持的参数
+            kwargs.pop("serialized_type_name", None)
+            return orig_func(*args, **kwargs)
+
+        _pytree.register_pytree_node = _safe_register_pytree_node
+
+    elif hasattr(_pytree, "_register_pytree_node"):
+        orig_func = _pytree._register_pytree_node
+
+        def _safe_register_pytree_node(*args, **kwargs):
+            kwargs.pop("serialized_type_name", None)
+            return orig_func(*args, **kwargs)
+
+        _pytree.register_pytree_node = _safe_register_pytree_node
+
 except Exception:  # pragma: no cover
     pass
+
+# 设置环境变量以减少transformers相关依赖问题
+import os
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
 try:
     import segmentation_models_pytorch as smp  # type: ignore[import]
@@ -431,3 +451,398 @@ class EnhancedCVVeinSegmentor:
         return full_mask
 
 
+class SimpleCenterCVVeinSegmentor:
+    """
+    ��򵥵��� OpenCV �Խ� ROI ���м��͵�"�����ڡ�"�ָ
+    - �ڲ�ʹ�� Gaussian �Գ� + CLAHE ��ǿ
+    - ͨ��ģ�ת + Otsu ��ֵ��ȡ�� ROI �ڵķ��������
+    - �� morphology �޳���С�����߲����
+    - �� contours �У�ѡ�����ĵĵ�λ�� ROI �м䣬���������Ϻ�״�������ĵ���
+    """
+
+    def segment(
+        self,
+        image: np.ndarray,
+        roi: ROIRegion,
+        parameters: Optional[Dict[str, float]] = None,
+    ) -> np.ndarray:
+        if image.ndim == 2:
+            height, width = image.shape
+            gray = image
+        else:
+            height, width = image.shape[:2]
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        x1 = max(0, int(roi.x))
+        y1 = max(0, int(roi.y))
+        x2 = min(width, x1 + int(roi.width))
+        y2 = min(height, y1 + int(roi.height))
+
+        if x2 <= x1 or y2 <= y1:
+            logger.warning(
+                "Invalid ROI for SimpleCenterCVVeinSegmentor, image_size=(%s,%s), x1=%s,x2=%s,y1=%s,y2=%s",
+                width,
+                height,
+                x1,
+                x2,
+                y1,
+                y2,
+            )
+            return np.zeros((height, width), dtype=np.uint8)
+
+        roi_img = gray[y1:y2, x1:x2]
+        roi_h, roi_w = roi_img.shape[:2]
+        roi_area = float(roi_w * roi_h)
+
+        params = parameters or {}
+
+        blur_ksize = int(params.get("blur_kernel_size", 5))
+        if blur_ksize % 2 == 0:
+            blur_ksize += 1
+        clahe_clip = float(params.get("clahe_clip_limit", 2.0))
+        clahe_tile = int(params.get("clahe_tile_grid_size", 8))
+
+        morph_ksize = int(params.get("morph_kernel_size", 5))
+        if morph_ksize % 2 == 0:
+            morph_ksize += 1
+        close_iter = int(params.get("morph_close_iterations", 2))
+        open_iter = int(params.get("morph_open_iterations", 1))
+
+        # ������ز���Ĳ���Ϊ ROI ���ֵı���
+        area_min_factor = float(params.get("area_min_factor", 0.01))
+        area_max_factor = float(params.get("area_max_factor", 0.4))
+        circularity_min = float(params.get("circularity_min", 0.4))
+
+        area_min = area_min_factor * roi_area
+        area_max = area_max_factor * roi_area
+
+        logger.info(
+            "SimpleCenterCVVeinSegmentor.segment roi_size=(%s,%s), area_range=[%s,%s]",
+            roi_w,
+            roi_h,
+            area_min,
+            area_max,
+        )
+
+        # Ԥ����
+        blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
+        clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
+        enhanced = clahe.apply(blurred)
+
+        # ��ת��ʹ���ڿ�ͨ��Ϊ��������
+        inv = cv2.bitwise_not(enhanced)
+
+        # Otsu ��ֵ
+        _, bw = cv2.threshold(inv, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # ��̬ѧ�޳�����
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (morph_ksize, morph_ksize))
+        closed = cv2.morphologyEx(bw, cv2.MORPH_CLOSE, kernel, iterations=close_iter)
+        opened = cv2.morphologyEx(closed, cv2.MORPH_OPEN, kernel, iterations=open_iter)
+
+        contours, _ = cv2.findContours(opened, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        logger.info("SimpleCenterCVVeinSegmentor found %s raw contours", len(contours))
+
+        if not contours:
+            full_empty = np.zeros((height, width), dtype=np.uint8)
+            return full_empty
+
+        roi_cx = roi_w / 2.0
+        roi_cy = roi_h / 2.0
+        diag2 = roi_w * roi_w + roi_h * roi_h
+
+        best_score = -1.0
+        best_cnt = None
+        best_center_score = -1.0
+        best_center_cnt = None
+
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area <= 0:
+                continue
+
+            if area < area_min or area > area_max:
+                logger.debug("SimpleCenterCV: contour filtered by area=%s", area)
+                continue
+
+            perimeter = cv2.arcLength(cnt, True)
+            if perimeter <= 0:
+                continue
+            circularity = 4.0 * np.pi * area / (perimeter * perimeter)
+
+            M = cv2.moments(cnt)
+            if M["m00"] == 0:
+                continue
+            cx = M["m10"] / M["m00"]
+            cy = M["m01"] / M["m00"]
+
+            dist2 = (cx - roi_cx) ** 2 + (cy - roi_cy) ** 2
+            norm_dist = dist2 / diag2 if diag2 > 0 else 0.0
+
+            # �ں����У��Բ��Ե;���Ŀ��ȼ�
+            score = circularity + (1.0 - norm_dist)
+
+            logger.debug(
+                "SimpleCenterCV: contour area=%s, circularity=%s, center=(%s,%s), norm_dist=%s, score=%s",
+                area,
+                circularity,
+                cx,
+                cy,
+                norm_dist,
+                score,
+            )
+
+            if circularity >= circularity_min and score > best_score:
+                best_score = score
+                best_cnt = cnt
+
+            center_score = 1.0 - norm_dist
+            if center_score > best_center_score:
+                best_center_score = center_score
+                best_center_cnt = cnt
+
+        mask_roi = np.zeros_like(roi_img, dtype=np.uint8)
+        target_cnt = best_cnt if best_cnt is not None else best_center_cnt
+        # 如果所有轮廓都被严格条件过滤掉，则退而求其次选一个最大的轮廓
+        if False and target_cnt is None and len(contours) > 0:
+            target_cnt = max(contours, key=cv2.contourArea)
+            logger.info(
+                "SimpleCenterCVVeinSegmentor fallback selected largest contour, area=%s",
+                cv2.contourArea(target_cnt),
+            )
+
+        if target_cnt is not None:
+            cv2.drawContours(mask_roi, [target_cnt], -1, 1, thickness=-1)
+            logger.info(
+                "SimpleCenterCVVeinSegmentor selected contour, mask_pixels=%s",
+                int(mask_roi.sum()),
+            )
+        else:
+            logger.info("SimpleCenterCVVeinSegmentor did not select any contour")
+
+        full_mask = np.zeros((height, width), dtype=np.uint8)
+        full_mask[y1:y2, x1:x2] = mask_roi
+
+        return full_mask
+
+
+class EllipticalMorphSegmentor:
+    """
+    椭圆形形态学阈值分割算法：
+    - 支持双阈值选择（可调阈值区间）
+    - 使用椭圆形结构元素进行形态学操作
+    - 提供形态学严格程度统一控制
+    - 支持最大连通区域检测功能
+    - 适用于需要精确形状控制的分割任务
+
+    参数（parameters）：
+    - threshold_min: 阈值下限
+    - threshold_max: 阈值上限
+    - ellipse_major_axis: 椭圆长轴长度
+    - ellipse_minor_axis: 椭圆短轴长度
+    - ellipse_angle: 椭圆旋转角度（度）
+    - morph_strength: 形态学严格程度 (0.0-1.0)
+    - blur_kernel_size: 预处理模糊核大小
+    - clahe_clip_limit: CLAHE对比度限制
+    - clahe_tile_grid_size: CLAHE网格大小
+    - elliptical_constraint_enabled: 是否启用椭圆约束 (0/1)
+    - max_connected_component_enabled: 是否启用最大连通区域检测 (0/1)
+    """
+
+    def segment(
+        self,
+        image: np.ndarray,
+        roi: ROIRegion,
+        parameters: Optional[Dict[str, float]] = None,
+    ) -> np.ndarray:
+        logger.info(
+            "EllipticalMorphSegmentor.segment roi=(x=%s,y=%s,w=%s,h=%s), params=%s",
+            getattr(roi, "x", None),
+            getattr(roi, "y", None),
+            getattr(roi, "width", None),
+            getattr(roi, "height", None),
+            parameters,
+        )
+
+        if image.ndim == 2:
+            height, width = image.shape
+            gray = image
+        else:
+            height, width = image.shape[:2]
+            gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+
+        x1 = max(0, int(roi.x))
+        y1 = max(0, int(roi.y))
+        x2 = min(width, x1 + int(roi.width))
+        y2 = min(height, y1 + int(roi.height))
+
+        if x2 <= x1 or y2 <= y1:
+            logger.warning("Invalid ROI for elliptical morph segmentation, return empty mask")
+            return np.zeros((height, width), dtype=np.uint8)
+
+        roi_img = gray[y1:y2, x1:x2]
+        roi_h, roi_w = roi_img.shape[:2]
+
+        # 解析参数
+        params = parameters or {}
+        threshold_min = int(params.get("threshold_min", 50))
+        threshold_max = int(params.get("threshold_max", 150))
+        ellipse_major = int(params.get("ellipse_major_axis", 15))
+        ellipse_minor = int(params.get("ellipse_minor_axis", 10))
+        ellipse_angle = float(params.get("ellipse_angle", 0.0))
+        morph_strength = float(params.get("morph_strength", 0.5))
+
+        # 椭圆约束控制参数
+        elliptical_constraint_enabled = bool(int(params.get("elliptical_constraint_enabled", 0)))
+
+        # 最大连通区域检测参数
+        max_connected_component_enabled = bool(int(params.get("max_connected_component_enabled", 0)))
+
+        # 预处理参数
+        blur_ksize = int(params.get("blur_kernel_size", 5))
+        if blur_ksize % 2 == 0:
+            blur_ksize += 1
+        clahe_clip = float(params.get("clahe_clip_limit", 2.0))
+        clahe_tile = int(params.get("clahe_tile_grid_size", 8))
+
+        logger.info(
+            "EllipticalMorph parameters: threshold_range=[%s,%s], ellipse=(%s,%s,%s°), morph_strength=%s, constraint_enabled=%s, max_connected_component=%s",
+            threshold_min, threshold_max, ellipse_major, ellipse_minor, ellipse_angle, morph_strength, elliptical_constraint_enabled, max_connected_component_enabled
+        )
+
+        try:
+            if max_connected_component_enabled:
+                # 最大连通区域模式：直接使用原始图像，避免预处理导致的区域连接
+                logger.info(f"EllipticalMorph: Direct thresholding for max connected component (connectivity=4)")
+
+                # 直接对原始图像进行阈值分割
+                mask = np.zeros_like(roi_img, dtype=np.uint8)
+                mask[(roi_img >= threshold_min) & (roi_img <= threshold_max)] = 255
+
+                # 调试：显示阈值分割结果
+                threshold_pixels = (mask > 0).sum()
+                logger.info(f"Threshold分割结果：{threshold_pixels}像素在阈值范围内")
+
+                # 轻微的形态学操作确保区域分离
+                kernel_small = np.ones((2, 2), np.uint8)
+                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small, iterations=1)
+
+                # 调试：显示形态学操作后的结果
+                morph_pixels = (mask > 0).sum()
+                logger.info(f"形态学操作后：{morph_pixels}像素（减少了{threshold_pixels - morph_pixels}像素）")
+
+                processed = mask.copy()
+            else:
+                # 常规模式：使用原有预处理流程
+                # 第一步：预处理
+                blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
+                clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
+                enhanced = clahe.apply(blurred)
+
+                # 第二步：双阈值分割
+                mask = np.zeros_like(roi_img, dtype=np.uint8)
+                mask[(enhanced >= threshold_min) & (enhanced <= threshold_max)] = 255
+
+                # 第三步：纯阈值分割，不进行任何形态学操作
+                logger.info("EllipticalMorph: Using regular preprocessing flow")
+                processed = mask.copy()
+
+            # 第四步：连通域分析和筛选
+            if max_connected_component_enabled:
+                # 最大连通区域检测：使用连通组件分析
+                if (processed > 0).sum() > 0:
+                    # 使用连通组件分析（4连通：只有上下左右相连）
+                    num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                        processed, connectivity=4, ltype=cv2.CV_32S
+                    )
+
+                    logger.info(f"连通组件分析结果：发现{num_labels}个标签（包括背景），{num_labels-1}个连通区域")
+
+                    # 显示所有连通区域的面积信息
+                    for i in range(1, num_labels):
+                        area = stats[i, cv2.CC_STAT_AREA]
+                        logger.info(f"连通区域 {i}: 面积={area}像素")
+
+                    # 跳过背景标签（标签0），找到最大的连通区域
+                    if num_labels > 1:
+                        # stats的第四列是面积，找到最大连通区域（不包括背景）
+                        max_area_idx = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+                        max_area = stats[max_area_idx, cv2.CC_STAT_AREA]
+
+                        # 创建只包含最大连通区域的mask
+                        mask_roi = (labels == max_area_idx).astype(np.uint8) * 255
+                        kept_contours = 1
+
+                        logger.info(
+                            "EllipticalMorph 4-connected component: kept largest component with area=%s pixels (total components: %s)",
+                            int(max_area),
+                            num_labels - 1
+                        )
+
+                        # 调试：检查绘制结果
+                        drawn_pixels = (mask_roi > 0).sum()
+                        logger.info(f"Max connected component: drawn_pixels={drawn_pixels}, max_area={max_area}")
+                    else:
+                        logger.warning("EllipticalMorph 4-connected component: no connected components found")
+                        mask_roi = processed.copy()
+                        kept_contours = "original"
+                else:
+                    logger.warning("EllipticalMorph max connected component: no white pixels in processed mask")
+                    mask_roi = processed.copy()
+                    kept_contours = "empty"
+            else:
+                # 保留所有连通区域，不进行过滤
+                mask_roi = processed.copy()
+                kept_contours = (mask_roi > 0).sum()
+
+            logger.info(
+                "EllipticalMorph kept %s pixels after filtering, max_connected_component=%s",
+                int(kept_contours),
+                max_connected_component_enabled,
+            )
+
+            # 转换为二进制掩码
+            binary_mask = (mask_roi > 0).astype(np.uint8)
+
+            full_mask = np.zeros((height, width), dtype=np.uint8)
+            full_mask[y1:y2, x1:x2] = binary_mask
+
+            return full_mask
+
+        except Exception as exc:
+            logger.error(f"EllipticalMorph segmentation failed: {exc}")
+            # 返回空掩码作为fallback
+            return np.zeros((height, width), dtype=np.uint8)
+
+    def _create_rotated_ellipse_kernel(self, major_axis: int, minor_axis: int, angle: float) -> np.ndarray:
+        """创建旋转的椭圆形结构元素"""
+        # 创建基础椭圆
+        kernel = np.zeros((major_axis * 2, major_axis * 2), dtype=np.uint8)
+        center = (major_axis, major_axis)
+
+        # 绘制椭圆
+        cv2.ellipse(
+            kernel, center, (minor_axis, major_axis), angle, 0, 360, 255, -1
+        )
+
+        return kernel
+
+    def _calculate_ellipticity(self, contour: np.ndarray) -> float:
+        """计算轮廓的椭圆性（0-1，1表示完美椭圆）"""
+        if len(contour) < 5:
+            return 0.0
+
+        try:
+            # 拟合椭圆
+            ellipse = cv2.fitEllipse(contour)
+            (x, y), (major_axis, minor_axis), angle = ellipse
+
+            if minor_axis == 0:
+                return 0.0
+
+            # 计算椭圆性（短轴/长轴的比例）
+            ellipticity = min(major_axis, minor_axis) / max(major_axis, minor_axis)
+
+            return ellipticity
+        except Exception:
+            return 0.0

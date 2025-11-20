@@ -43,6 +43,8 @@ chmod +x start.sh && ./start.sh
 
 # Manual setup
 python3 -m venv venv
+source venv/bin/activate  # Linux/Mac
+# OR
 .\venv\Scripts\Activate.ps1  # PowerShell
 pip install -r requirements.txt
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -92,6 +94,18 @@ docker-compose logs -f [service-name]
 docker-compose ps                         # Check service status
 ```
 
+### Development Scripts (Recommended)
+```bash
+# Quick development environment setup (automated)
+./scripts/dev-start.sh                   # Start all 8 services with health checks
+./scripts/dev-stop.sh                    # Stop all services gracefully
+./scripts/dev-restart.sh                 # Restart all services
+./scripts/dev-logs.sh                    # View logs from all services
+./scripts/deploy.sh                      # Production deployment script
+
+# Note: scripts automatically handle environment files, directories, and service health checks
+```
+
 ## Machine Learning Integration
 
 ### SAMUS Inference System (`samus_inference.py`)
@@ -108,6 +122,7 @@ The system now includes advanced ML model support with multiple segmentation app
 - `CVVeinSegmentor`: Standard CV approach with Canny + Hough
 - `EnhancedCVVeinSegmentor`: Enhanced CV with Frangi filters
 - `SamusVeinSegmentor`: Deep learning-based segmentation
+- `EllipticalMorphSegmentor`: Elliptical morphology with dual-threshold control
 
 **Key API Endpoints**:
 - `POST /analysis/samus` - Real-time vein segmentation from canvas data URLs
@@ -136,6 +151,8 @@ ML Model Inference → Vein Detection → ROI Tracking → Result Storage → Vi
 - Canvas-based image processing from data URLs
 - Model routing and algorithm selection
 - Performance optimization with Numba
+- Dynamic model loading with `model_loader.py` for unified model management
+- Compatibility shim for torch/transformers version conflicts
 
 **Vein Detection (`vein_detector.py`)**:
 - Multi-algorithm approach: Canny edge detection + Hough circles + ellipse fitting
@@ -179,6 +196,8 @@ ML Model Inference → Vein Detection → ROI Tracking → Result Storage → Vi
 - Color-coded confidence visualization (green: high, yellow: medium, red: low)
 - Responsive design for different screen sizes
 - Mock data support for development without backend
+- Interactive T1 slider for enhanced threshold control in elliptical morphology
+- Real-time algorithm parameter adjustment with immediate visual feedback
 
 ## Configuration
 
@@ -205,11 +224,19 @@ DB_PASSWORD, REDIS_PASSWORD, MINIO_ROOT_USER
 CORS_ORIGINS, API_WORKERS, DETECTION_BATCH_SIZE
 ```
 
-### Backend Configuration (`backend/config.yaml`)
+### Backend Configuration
+**`backend/config.yaml`** - Main system configuration:
 - Video processing parameters (FPS, resolution limits)
 - Detection algorithm thresholds (Canny, Hough transform)
 - ROI tracking settings (size, movement thresholds)
 - Performance limits (batch size, memory limits)
+
+**`backend/detection_config.yaml`** - Algorithm-specific configuration:
+- Model selection (samus, unet, cv_enhanced, cv_basic, cv)
+- Deep learning parameters (encoder, threshold, device settings)
+- Image processing (blur, CLAHE, morphology parameters)
+- Elliptical morphology (dual-threshold, ellipse kernel sizing)
+- Performance and logging configuration
 
 ### Detection Settings
 Default parameters are configurable via API:

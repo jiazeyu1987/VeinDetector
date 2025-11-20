@@ -36,6 +36,7 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
   const [currentPoint, setCurrentPoint] = useState<{ x: number; y: number } | null>(null);
   const [activeHandle, setActiveHandle] = useState<HandlePosition['position'] | null>(null);
   const [draggedHandle, setDraggedHandle] = useState<number | null>(null);
+  const [isROIHidden, setIsROIHidden] = useState(false);
 
   const getCanvasCoordinates = useCallback(
     (e: React.MouseEvent) => {
@@ -192,6 +193,20 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
     ],
   );
 
+  const handleContextMenu = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault(); // Prevent default context menu
+      if (!enabled || !currentROI) return;
+
+      const point = getCanvasCoordinates(e);
+      if (isPointInROI(point.x, point.y, currentROI)) {
+        // Toggle ROI visibility when right-clicking inside ROI
+        setIsROIHidden(prev => !prev);
+      }
+    },
+    [enabled, currentROI, getCanvasCoordinates, isPointInROI],
+  );
+
   const handleMouseUp = useCallback(() => {
     if (isDrawing && startPoint && currentPoint) {
       const roi: ROI = {
@@ -204,6 +219,8 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       };
       if (roi.width > 10 && roi.height > 10) {
         onROIChange(roi);
+        // Show ROI when creating new one
+        setIsROIHidden(false);
       }
     }
     setIsDrawing(false);
@@ -272,13 +289,13 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
     }
-    if (currentROI) {
+    if (currentROI && !isROIHidden) {
       drawROI(ctx, currentROI);
     }
     if (isDrawing) {
       drawCreatingROI(ctx);
     }
-  }, [currentROI, isDrawing, drawROI, drawCreatingROI]);
+  }, [currentROI, isDrawing, isROIHidden, drawROI, drawCreatingROI]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -320,6 +337,7 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onContextMenu={handleContextMenu}
       >
         <canvas ref={canvasRef} className="absolute inset-0" />
       </div>

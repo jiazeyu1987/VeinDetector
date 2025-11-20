@@ -12,6 +12,7 @@ from typing import Dict, List, Optional
 from datetime import datetime
 import uuid
 import asyncio
+import numpy as np
 from models import (
     VideoUploadResponse,
     ProcessingProgressResponse,
@@ -27,11 +28,18 @@ from models import (
 from video_processor import VideoProcessor
 from vein_detector import VeinDetector, VeinRegion
 from roi_handler import ROIHandler
+# 设置环境变量以避免transformers兼容性问题
+import os
+os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
+os.environ['TRANSFORMERS_OFFLINE'] = '1'
+
 from samus_inference import (
+    decode_image_from_data_url,
     SamusVeinSegmentor,
     CVVeinSegmentor,
     EnhancedCVVeinSegmentor,
-    decode_image_from_data_url,
+    SimpleCenterCVVeinSegmentor,
+    EllipticalMorphSegmentor,
 )
 
 # 设置日志
@@ -69,9 +77,13 @@ app.mount("/uploads", StaticFiles(directory=str(UPLOAD_DIR)), name="uploads")
 video_processor = VideoProcessor(str(UPLOAD_DIR))
 vein_detector = VeinDetector()
 roi_handler = ROIHandler()
+
+# 静脉分割组件 - 使用原有方式
 samus_segmentor = SamusVeinSegmentor()
 cv_segmentor = CVVeinSegmentor()
 enhanced_cv_segmentor = EnhancedCVVeinSegmentor()
+simple_center_segmentor = SimpleCenterCVVeinSegmentor()
+elliptical_morph_segmentor = EllipticalMorphSegmentor()
 
 # 任务存储（实际项目中应使用数据库）
 processing_tasks: Dict[str, VideoProcessingTask] = {}
@@ -360,12 +372,26 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
 
     # 如果前端选择了传统 CV 分割，直接走 OpenCV 流程
     cv_model_name = (request.model_name or "").lower()
-    if cv_model_name in {"cv", "cv-vein", "opencv", "cv_enhanced", "cv-advanced", "cv-frangi"}:
+    if cv_model_name in {
+        "cv",
+        "cv-vein",
+        "opencv",
+        "cv_enhanced",
+        "cv-advanced",
+        "cv-frangi",
+        "cv_simple_center",
+    }:
         try:
             if cv_model_name in {"cv_enhanced", "cv-advanced", "cv-frangi"}:
-                mask = enhanced_cv_segmentor.segment(image, request.roi, request.parameters or None)
+                mask = enhanced_cv_segmentor.segment(
+                    image, request.roi, request.parameters or None
+                )
+            elif cv_model_name == "cv_simple_center":
+                mask = simple_center_segmentor.segment(
+                    image, request.roi, request.parameters or None
+                )
             else:
-                mask = cv_segmentor.segment(image, request.roi)
+                mask = cv_segmentor.segment(image, request.roi, request.parameters or None)
         except Exception as exc:
             logger.exception("CV vein segmentation failed")
             raise HTTPException(status_code=500, detail="静脉分割失败") from exc
@@ -386,19 +412,25 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
 
     try:
         model_name = (request.model_name or "samus").lower()
+        logger.info(f"Using model: {model_name}")
+
         # 根据前端选择的模型名称路由到不同的分割实现
-        # 目前仅实现了 SAMUS 占位推理，其它模型可以在此处接入
-        if model_name in {"samus", "samus-ultrasound"}:
-            mask = samus_segmentor.segment(image, request.roi)
-        elif model_name in {"unet", "unet++"}:
-            # TODO: 在这里调用 U-Net 模型推理
-            mask = samus_segmentor.segment(image, request.roi)
-        elif model_name in {"nnunet", "nn-unet"}:
-            # TODO: 在这里调用 nnU-Net 模型推理
-            mask = samus_segmentor.segment(image, request.roi)
+        if model_name in {"samus", "samus-ultrasound", "unet", "unet++"}:
+            mask = samus_segmentor.segment(image, request.roi, request.parameters or None)
+        elif model_name in {"cv_enhanced", "cv-frangi"}:
+            mask = enhanced_cv_segmentor.segment(image, request.roi, request.parameters or None)
+        elif model_name in {"cv_simple_center"}:
+            mask = simple_center_segmentor.segment(image, request.roi, request.parameters or None)
+        elif model_name in {"elliptical_morph", "ellipse_morph", "ellipse_threshold"}:
+            # 获取前端传递的参数
+            parameters = {}
+            if hasattr(request, 'parameters') and request.parameters:
+                parameters = request.parameters
+            mask = elliptical_morph_segmentor.segment(image, request.roi, parameters)
         else:
-            logger.warning("未知模型名称 %s，回退到 SAMUS", request.model_name)
-            mask = samus_segmentor.segment(image, request.roi)
+            logger.warning(f"未知模型名称 {model_name}，回退到 SAMUS")
+            mask = samus_segmentor.segment(image, request.roi, request.parameters or None)
+
     except Exception as exc:
         logger.exception("Vein segmentation failed")
         raise HTTPException(status_code=500, detail="静脉分割失败") from exc

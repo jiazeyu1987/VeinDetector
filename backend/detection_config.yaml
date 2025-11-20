@@ -1,0 +1,63 @@
+# Vein Detection System Configuration
+# This file replaces hardcoded values throughout the system
+
+# Default model selection
+model_type: "samus"  # Options: samus, unet, cv_enhanced, cv_basic, cv
+
+# Deep Learning Model Configuration
+encoder_name: "resnet34"  # resnet34, resnet50, efficientnet-b0, etc.
+encoder_weights: "imagenet"  # imagenet, or path to custom weights
+in_channels: 3
+classes: 1
+model_path: null  # Path to custom model weights (.pth file)
+threshold: 0.5  # Probability threshold for binary mask
+
+# Device Configuration
+device: "auto"  # auto, cpu, cuda
+padding_size: 32  # Padding size for model input (multiple of this)
+
+# Image Processing Configuration
+blur_kernel_size: 5  # Must be odd number
+clahe_clip_limit: 2.0
+clahe_tile_grid_size: 8
+morph_kernel_size: 5  # Must be odd number
+morph_close_iterations: 2
+morph_open_iterations: 1
+
+# Enhanced CV Algorithm Configuration
+frangi_scale_min: 1.5
+frangi_scale_max: 5.0
+frangi_scale_step: 0.5
+frangi_threshold: 0.04
+
+# Contour filtering parameters
+area_min: 300.0
+area_max: 3500.0
+aspect_ratio_min: 0.6
+aspect_ratio_max: 1.6
+center_band_top: 0.4  # Top of center band (relative to ROI height)
+center_band_bottom: 0.8  # Bottom of center band
+
+# Simple CV Algorithm Configuration
+area_min_factor: 0.01  # Minimum area as factor of ROI area
+area_max_factor: 0.4   # Maximum area as factor of ROI area
+circularity_min: 0.4   # Minimum circularity score
+
+# Performance Configuration
+performance:
+  max_concurrent_requests: 10
+  timeout_seconds: 30
+  memory_limit_mb: 2048
+  gpu_memory_fraction: 0.8
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  log_predictions: false
+  log_intermediate_results: true
+
+# Model Registry Configuration
+model_registry:
+  auto_download: false
+  cache_directory: "./models/cache"
+  timeout_seconds: 300
