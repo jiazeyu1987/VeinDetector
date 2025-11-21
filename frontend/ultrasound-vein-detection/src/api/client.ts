@@ -182,6 +182,7 @@ export const mockApi = {
         fps: 30,
         width: 1920,
         height: 1080,
+        videoUrl: '/mock-video.mp4', // 模拟视频URL
       },
     };
   },
