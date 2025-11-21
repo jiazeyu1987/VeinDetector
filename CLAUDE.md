@@ -4,212 +4,189 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**VeinDetector** is an advanced ultrasound vein detection and tracking system that processes medical ultrasound videos to automatically identify and track veins using computer vision and machine learning algorithms. The system provides a professional medical imaging platform with real-time processing capabilities and deep learning model integration.
+**VeinDetector** is an advanced medical imaging system for ultrasound vein detection and tracking. The system processes medical ultrasound videos using computer vision and machine learning algorithms to automatically identify and track veins in real-time.
 
-## Architecture
+## Architecture Overview
 
-The system uses a modern microservices architecture with three main layers:
+The system uses a modern microservices architecture with comprehensive testing infrastructure:
 
 ### Frontend (React + TypeScript)
 - **Location**: `frontend/ultrasound-vein-detection/`
-- **Tech Stack**: React 18.3, TypeScript 5.6, Vite 6.0, Tailwind CSS v3.4
-- **UI Library**: Radix UI components (65+ components)
-- **UI Style**: VSCode-inspired dark theme with three-panel layout
-- **Key Features**: Interactive ROI editing, real-time video processing, confidence visualization
+- **Tech Stack**: React 18.3, TypeScript 5.6, Vite 6.0, Tailwind CSS v3.4, Radix UI
+- **Key Features**: Interactive ROI editing, real-time video processing, confidence visualization, VSCode-inspired dark theme
 
 ### Backend (Python FastAPI + ML)
-- **Location**: `backend/`
-- **Core Framework**: FastAPI 0.104.1, Uvicorn 0.24.0
-- **Computer Vision**: OpenCV 4.8.1.78, FFmpeg 0.2.0, Pillow 10.1.0
-- **Machine Learning**: PyTorch 2.1.1, TorchVision 0.16.1, Scikit-learn 1.3.2
-- **Image Processing**: Albumentations 1.3.1, Scikit-image 0.21.0, Segmentation-models-pytorch 0.3.3
-- **Performance**: Numba 0.58.1 for optimization
-- **API**: RESTful endpoints with auto-generated Swagger docs at `/docs`
+- **Location**: `backend/` (Python files at root level, no src/ directory)
+- **Core Framework**: FastAPI with comprehensive ML stack
+- **Computer Vision**: OpenCV, FFmpeg, Pillow
+- **Machine Learning**: PyTorch, TorchVision, Scikit-learn, segmentation-models-pytorch
+- **Performance**: Numba JIT compilation for algorithm optimization
 
-### Infrastructure (Docker + Monitoring)
+### Infrastructure
 - **Development**: 8 services (PostgreSQL, Redis, MinIO, API, Frontend, Video-service, Jupyter, MailHog)
 - **Production**: 16 services with monitoring stack (Prometheus, Grafana, Elasticsearch, Kibana)
-- **Background Tasks**: Celery workers with Redis broker
-- **Services**: Database (5432), Redis (6379), MinIO (9000), API (8000), Web (3000), Jupyter (8888), MailHog (8025)
 
 ## Development Commands
 
-### Backend Development
+### Root Level Commands (Primary Development Workflow)
 ```bash
-cd backend
+# Development workflow
+npm run dev                    # Start frontend development server
+npm run build                  # Build both frontend and backend
+npm run test                   # Run Jest test suite
+npm run lint                   # ESLint checking
+npm run health-check           # API health check
 
-# Quick start with provided script
-chmod +x start.sh && ./start.sh
+# Comprehensive testing
+npm run test:unit              # Unit tests only
+npm run test:integration       # Integration tests
+npm run test:e2e              # End-to-end tests
+npm run test:performance      # Performance tests
+npm run test:memory           # Memory usage analysis
+npm run test:cpu              # CPU usage analysis
+npm run test:coverage         # Test coverage report
 
-# Manual setup
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# OR
-.\venv\Scripts\Activate.ps1  # PowerShell
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-# OR
-python main.py
+# Docker management
+npm run docker:build           # Build Docker images
+npm run docker:up             # Start Docker containers
+npm run docker:down           # Stop Docker containers
+npm run docker:logs           # View Docker logs
 
-# Testing and code quality
-pytest test_system.py -v                 # Run system tests
-pytest --cov=.                           # Run tests with coverage
-black .                                   # Format code
-flake8 .                                  # Lint code
-mypy .                                    # Type checking
-isort .                                   # Sort imports
+# Dependencies
+npm run install:all            # Install all dependencies (root, frontend, backend, video-service)
+npm run clean                  # Clean all node_modules
 
-# Production deployment
-gunicorn main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+# Deployment and monitoring
+npm run deploy                 # Production deployment via scripts/deploy.sh
+npm run monitor                # System monitoring via scripts/monitor.js
 ```
 
 ### Frontend Development
 ```bash
 cd frontend/ultrasound-vein-detection
 
-# Development
-pnpm install --prefer-offline && pnpm dev # Development server (port 3000)
+# Development server (recommended approach)
+pnpm install --prefer-offline && pnpm dev    # Development with auto-reload (port 3000)
 
 # Build and quality
-pnpm build                                # Production build
-pnpm build:prod                           # Production build with optimizations
-pnpm lint                                 # Code linting
-pnpm preview                             # Preview build
-pnpm clean                                # Clean dependencies and cache
+pnpm build                                  # Production build
+pnpm build:prod                             # Production build with optimizations
+pnpm lint                                   # ESLint code checking
+pnpm preview                               # Preview production build
+pnpm clean                                  # Clean dependencies and cache
+```
+
+### Backend Development
+```bash
+cd backend
+
+# Quick start (recommended)
+./start.sh                                  # Quick start script (sets up venv, installs deps, starts server)
+
+# Manual development server
+python main.py                              # Run FastAPI application directly
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload  # With hot reload
+
+# Testing and code quality
+python test_system.py -v                    # Run system tests
+pytest --cov=.                             # Run tests with coverage
+black .                                     # Format code
+flake8 .                                    # Lint code
+mypy .                                      # Type checking
+isort .                                     # Sort imports
 ```
 
 ### Docker Development
 ```bash
-# Full development environment (8 services)
-docker-compose -f docker-compose.dev.yml up -d
+# Development environment (8 services: postgres, redis, minio, api, web, video-service, mailhog, jupyter)
+docker-compose -f docker-compose.dev.yml up -d      # Start all services
+docker-compose -f docker-compose.dev.yml down       # Stop all services
+docker-compose -f docker-compose.dev.yml logs -f    # View logs
 
 # Production environment (16 services with monitoring)
-docker-compose -f docker-compose.prod.yml up -d
-
-# Backend-only container
-cd backend && docker-compose up -d
-
-# Service logs
-docker-compose logs -f [service-name]
-docker-compose ps                         # Check service status
+docker-compose -f docker-compose.prod.yml up -d     # Start production stack
 ```
 
-### Development Scripts (Recommended)
+### Development Scripts (Recommended for Automation)
 ```bash
-# Quick development environment setup (automated)
-./scripts/dev-start.sh                   # Start all 8 services with health checks
-./scripts/dev-stop.sh                    # Stop all services gracefully
+# Service management (automates environment setup and health checks)
+./scripts/dev-start.sh                   # Start all 8 development services
+./scripts/dev-stop.sh                    # Stop all development services
 ./scripts/dev-restart.sh                 # Restart all services
 ./scripts/dev-logs.sh                    # View logs from all services
-./scripts/deploy.sh                      # Production deployment script
 
-# Note: scripts automatically handle environment files, directories, and service health checks
+# Production deployment
+./scripts/deploy.sh check                # Check system environment and dependencies
+./scripts/deploy.sh deploy               # Full deployment workflow
+./scripts/deploy.sh start                # Start services
+./scripts/deploy.sh monitor              # Monitor system health with live dashboard
+./scripts/deploy.sh logs [service]       # View service logs
+./scripts/deploy.sh backup               # Backup data (database, uploads, config)
+./scripts/deploy.sh cleanup              # Clean system resources
+./scripts/deploy.sh test                 # Run performance tests
 ```
 
-## Machine Learning Integration
+## Core Backend Components
 
-### SAMUS Inference System (`samus_inference.py`)
+### ML Model Integration (`samus_inference.py`, `model_loader.py`)
+- **Deep Learning Models**: SAMUS (Segment Anything Model for Ultrasound), U-Net, nnU-Net via segmentation-models-pytorch
+- **Traditional CV Algorithms**: CVVeinSegmentor, EnhancedCVVeinSegmentor (with Frangi filters), SimpleCenterCVVeinSegmentor, EllipticalMorphSegmentor
+- **Key Features**: Real-time canvas-based processing, intelligent model routing, Numba JIT optimization for performance-critical sections
+- **Environment Compatibility**: Handles transformers/torch compatibility issues with safe pytree wrappers
 
-The system now includes advanced ML model support with multiple segmentation approaches:
+### Video Processing Pipeline (`video_processor.py`, `vein_detector.py`, `roi_handler.py`)
+- **Video Support**: MP4, AVI, MOV, MKV (up to 500MB files)
+- **Processing Pipeline**: Frame extraction at 8 FPS, Gaussian blur preprocessing, CLAHE enhancement
+- **Detection Algorithms**: Canny edge detection + Hough circles + ellipse fitting for vein identification
+- **ROI Tracking**: Interactive management with Kalman filtering for smooth movement tracking
+- **Performance**: Async background processing with progress monitoring
 
-**Model Support**:
-- **SAMUS**: Advanced vein segmentation model
-- **U-Net**: Medical image segmentation
-- **nnU-Net**: Automated medical segmentation
-- **CV Models**: Traditional computer vision approaches
+### API Endpoints (`main.py`)
+- `POST /upload-video` - Upload and start video processing with file validation
+- `GET /processing-status/{task_id}` - Real-time progress monitoring with ETA calculations
+- `GET /detection-results/{task_id}` - Retrieve comprehensive detection results with vein regions
+- `POST /analysis/samus` - Real-time vein segmentation analysis with multiple algorithm support
+- `PUT /detection-settings` - Configure detection parameters dynamically during processing
+- `GET /download-results/{task_id}` - Export results as JSON with complete metadata
+- `GET /health` - System health check for all components
+- `DELETE /tasks/{task_id}` - Clean up completed tasks and resources
 
-**Available Algorithms**:
-- `CVVeinSegmentor`: Standard CV approach with Canny + Hough
-- `EnhancedCVVeinSegmentor`: Enhanced CV with Frangi filters
-- `SamusVeinSegmentor`: Deep learning-based segmentation
-- `EllipticalMorphSegmentor`: Elliptical morphology with dual-threshold control
+## Frontend Architecture
 
-**Key API Endpoints**:
-- `POST /analysis/samus` - Real-time vein segmentation from canvas data URLs
-- Support for model selection via request parameters
-- Multiple algorithm fallback system
+### Main Components
+- `MainLayout.tsx` - VSCode-inspired interface with video player, controls panel, and results visualization
+- `VideoPlayer.tsx` - Custom HTML5 video player with frame navigation, zoom controls, and variable playback speed
+- `ROIEditor.tsx` - Interactive ROI drawing with 8-point control handles for precise region selection
+- `VeinVisualization.tsx` - Real-time overlay of detection results with confidence-based color coding
+- `api/client.ts` - Complete RESTful API client with fallback mock data support for offline development
 
-## Core Processing Pipeline
+### Algorithm Parameter Controls
+The system supports real-time parameter adjustment for multiple vein detection algorithms:
+- **Enhanced CV Parameters**: Frangi filter settings, morphological operations, aspect ratio constraints
+- **Simple Center Parameters**: Basic morphological processing with circularity filtering
+- **Elliptical Morph Parameters**: Threshold-based segmentation with ellipse fitting (T1 slider)
 
-The vein detection system follows this architecture:
-
-```
-Video Upload → Validation → Frame Extraction → Preprocessing →
-ML Model Inference → Vein Detection → ROI Tracking → Result Storage → Visualization
-```
-
-### Key Backend Components
-
-**Video Processing (`video_processor.py`)**:
-- Handles video upload and validation (MP4, AVI, MOV, MKV)
-- Extracts frames at 8 FPS for processing efficiency
-- Applies image enhancement (Gaussian blur, CLAHE)
-- Supports files up to 500MB
-
-**ML Inference (`samus_inference.py`)**:
-- Real-time vein segmentation using deep learning models
-- Canvas-based image processing from data URLs
-- Model routing and algorithm selection
-- Performance optimization with Numba
-- Dynamic model loading with `model_loader.py` for unified model management
-- Compatibility shim for torch/transformers version conflicts
-
-**Vein Detection (`vein_detector.py`)**:
-- Multi-algorithm approach: Canny edge detection + Hough circles + ellipse fitting
-- Connected component analysis for vein segmentation
-- Confidence scoring system (0-1 range)
-- Configurable detection parameters
-
-**ROI Tracking (`roi_handler.py`)**:
-- Interactive Region of Interest management
-- Dynamic ROI updates based on vein positions
-- Movement smoothing to prevent jittery tracking
-- Historical tracking with configurable parameters
-
-**API Endpoints (`main.py`)**:
-- `POST /upload-video` - Upload and start processing
-- `GET /processing-status/{task_id}` - Real-time progress monitoring
-- `GET /detection-results/{task_id}` - Retrieve detection results
-- `POST /analysis/samus` - Real-time vein segmentation analysis
-- `PUT /detection-settings` - Configure detection parameters
-- `GET /download-results/{task_id}` - Export results as JSON
-
-### Frontend Architecture
-
-**Main Components**:
-- `MainLayout.tsx` (462 lines) - VSCode-style interface with video player, controls, and results panel
-- `VideoPlayer.tsx` (276 lines) - Custom video player with frame navigation, zoom, and playback controls
-- `ROIEditor.tsx` (419 lines) - Interactive ROI drawing with 8-point control handles
-- `VeinVisualization.tsx` (433 lines) - overlays detection results with confidence indicators
-- `api/client.ts` - Complete RESTful API client with mock data support
-- `api/types.ts` - Comprehensive TypeScript type definitions
-
-**Supporting Components**:
-- `ErrorBoundary.tsx` - Error boundary with graceful fallback
-- `LoadingSpinner.tsx` - Loading state indicators
-- `useKeyboardShortcuts.ts` - Keyboard shortcuts hook (Space, arrows, Ctrl+R/A/V)
-- `useFileDrop.ts` - File drag-and-drop functionality
-
-**Key Features**:
-- Real-time processing with progress tracking
-- Professional keyboard shortcuts (Space, ←/→, Ctrl+R, Ctrl+A, Ctrl+V)
-- Color-coded confidence visualization (green: high, yellow: medium, red: low)
-- Responsive design for different screen sizes
-- Mock data support for development without backend
-- Interactive T1 slider for enhanced threshold control in elliptical morphology
+### Key Features
+- Professional keyboard shortcuts (Space for play/pause, ←/→ for frame navigation, Ctrl+R for reset, Ctrl+A/V for ROI management)
+- Color-coded confidence visualization (green: high confidence, yellow: medium, red: low confidence)
 - Real-time algorithm parameter adjustment with immediate visual feedback
+- Canvas-based image processing with grayscale conversion and data URL handling
+- VSCode-style dark theme UI with responsive layout
 
-## Configuration
+## Configuration Files
+
+### Backend Configuration
+- `backend/config.yaml` - Main system configuration (video processing settings, detection thresholds, ROI parameters)
+- `backend/detection_config.yaml` - Algorithm-specific configuration (model selection, deep learning hyperparameters, image processing pipelines)
+- `backend/requirements.txt` - Comprehensive Python dependencies with specific versions
 
 ### Environment Variables
-**Frontend**:
 ```bash
+# Frontend
 VITE_API_BASE_URL=http://localhost:8000      # Backend API URL
 NODE_ENV=development/production              # Environment mode
-```
 
-**Backend**:
-```bash
+# Backend
 DATABASE_URL=postgresql://user:pass@localhost:5432/vein_db
 REDIS_URL=redis://localhost:6379
 MINIO_ROOT_USER=admin
@@ -218,141 +195,79 @@ SECRET_KEY=your-secret-key
 JWT_SECRET=your-jwt-secret
 ```
 
-**Production**:
-```bash
-DB_PASSWORD, REDIS_PASSWORD, MINIO_ROOT_USER
-CORS_ORIGINS, API_WORKERS, DETECTION_BATCH_SIZE
-```
-
-### Backend Configuration
-**`backend/config.yaml`** - Main system configuration:
-- Video processing parameters (FPS, resolution limits)
-- Detection algorithm thresholds (Canny, Hough transform)
-- ROI tracking settings (size, movement thresholds)
-- Performance limits (batch size, memory limits)
-
-**`backend/detection_config.yaml`** - Algorithm-specific configuration:
-- Model selection (samus, unet, cv_enhanced, cv_basic, cv)
-- Deep learning parameters (encoder, threshold, device settings)
-- Image processing (blur, CLAHE, morphology parameters)
-- Elliptical morphology (dual-threshold, ellipse kernel sizing)
-- Performance and logging configuration
-
-### Detection Settings
-Default parameters are configurable via API:
-- `canny_threshold_low`: 50 (edge detection lower bound)
-- `canny_threshold_high`: 150 (edge detection upper bound)
-- `min_vein_area`: 100 pixels (minimum vein size)
-- `max_vein_area`: 2000 pixels (maximum vein size)
-- Model selection: SAMUS, U-Net, CV models
-
 ## Testing Infrastructure
 
-**Current Test Setup**:
-- `backend/test_system.py` - System integration tests
-- Manual testing via API endpoints
-- Video processing validation
-- ML model inference validation
+### Comprehensive Test Framework
+- **Unit Tests**: `tests/unit/` - Individual component testing (videoUpload.test.js, veinDetection.test.js)
+- **Integration Tests**: `tests/integration/` - Cross-component integration testing (systemIntegration.test.js)
+- **E2E Tests**: `tests/e2e/` - Full application flow testing (e2e-test-runner.js)
+- **Performance Tests**: `tests/performance/` - Load and stress testing (performanceOptimization.test.js)
 
-**Test Coverage Areas**:
-- Video upload and validation
-- Vein detection accuracy across algorithms
-- ROI tracking reliability
-- API response times and error handling
-- ML model performance and fallback systems
-- Frontend UI interactions with mock data
+### Test Execution Commands
+```bash
+# Root level test commands
+npm test                                    # Run all tests with Jest
+npm run test:unit                          # Unit tests only
+npm run test:integration                   # Integration tests only
+npm run test:e2e                          # End-to-end tests with Puppeteer
+npm run test:performance                  # Performance tests with load testing
+npm run test:coverage                     # Generate coverage report
+npm run test:benchmark                    # Performance benchmark comparison
 
-**Quality Assurance Tools**:
-- Automated code formatting (Black, isort)
-- Static analysis (Flake8, MyPy)
-- ESLint for frontend code
-- Performance monitoring and alerting
+# Backend specific
+cd backend && python test_system.py -v    # System integration tests
+cd backend && pytest --cov=.             # Test coverage analysis
 
-## Production Infrastructure
+# Performance analysis
+npm run test:memory                       # Memory usage profiling
+npm run test:cpu                          # CPU usage analysis
+```
 
-### Monitoring Stack
-- **Prometheus**: Metrics collection and monitoring
-- **Grafana**: Dashboard visualization and alerts
-- **Elasticsearch**: Log aggregation and search
-- **Kibana**: Log analysis and visualization
-- **Filebeat**: Log shipping from containers
+## System Monitoring and Health Checks
 
-### Background Processing
-- **Celery Workers**: Distributed task processing
-- **Redis Broker**: Message queuing and distribution
-- **Beat Scheduler**: Periodic task management
+### Monitoring Scripts
+- `scripts/monitor.js` - Real-time system monitoring with CPU, memory, disk usage tracking
+- `scripts/errorHandler.js` - Comprehensive error handling with severity-based alerting
+- Automated health checks for Frontend (port 3000), Backend (port 8000), Video service (port 8080), Database (port 5432)
 
-### Resource Management
-- **Nginx**: Reverse proxy with SSL termination
-- **MinIO**: Object storage for video files
-- **Docker Resource Limits**: CPU/memory constraints
-- **Health Checks**: Automated service monitoring
+### Performance Benchmarks
+- **Video upload**: < 5 seconds for 100MB files
+- **Vein detection**: < 2 seconds per frame for 1920x1080 resolution
+- **ML inference**: < 1 second per frame with GPU acceleration
+- **API response**: < 200ms (95th percentile)
+- **System startup**: < 30 seconds for full stack
+- **Memory usage**: < 2GB for typical workloads
 
-## System Performance
+## Key Development Notes
 
-**Processing Capabilities**:
-- Video upload: < 5 seconds (100MB file)
-- Vein detection: < 2 seconds per frame (1920x1080)
-- ML inference: < 1 second per frame with GPU acceleration
-- API response: < 200ms (95th percentile)
-- System startup: < 30 seconds
+### Architecture Patterns
+- **Mixed Package Management**: Root uses npm, frontend uses pnpm for optimal dependency resolution
+- **Backend Structure**: Python files are at root level (no src/ directory), following FastAPI conventions
+- **Frontend Nesting**: React application is located in `frontend/ultrasound-vein-detection/`
+- **Shell Script Automation**: Heavy reliance on shell scripts for development and deployment workflows
 
-**Quality Assurance**:
-- Automated code formatting (Black)
-- Static analysis (Flake8, MyPy)
-- Comprehensive test coverage
-- Performance monitoring and alerting
+### Core Technical Patterns
+- **Canvas-Based Processing**: Real-time image processing using HTML5 Canvas API with data URL conversion
+- **Multi-Algorithm Fallback**: Intelligent routing between deep learning models (SAMUS, U-Net) and traditional CV approaches
+- **Async Background Processing**: FastAPI with asyncio for non-blocking video processing
+- **Error Handling**: Comprehensive error management with severity-based logging and user feedback
+- **Performance Optimization**: Numba JIT compilation for critical algorithm sections, especially morphological operations
 
-## Key Design Patterns
+### Development Environment Setup
+- **Backend Quick Start**: `./start.sh` script handles virtual environment creation, dependency installation, and server startup
+- **Frontend Development**: pnpm with Vite for fast hot-reload development experience
+- **Docker Development**: 8-service stack with live-reload volumes for both frontend and backend
+- **Health Monitoring**: Built-in health checks and monitoring scripts for all services
 
-**Asynchronous Processing**:
-- Background task processing with FastAPI and Celery
-- Real-time progress updates via WebSocket
-- Non-blocking video processing pipeline
-
-**ML Model Integration**:
-- Multiple algorithm fallback system
-- Model routing based on image characteristics
-- Performance optimization with Numba JIT compilation
-
-**Error Handling**:
-- Comprehensive validation for video uploads
-- Graceful degradation for detection failures
-- User-friendly error messages and recovery options
-- Unicode handling for Chinese comments (UTF-8)
-
-**Scalability**:
-- Containerized deployment with Docker
-- Horizontal scaling support via Celery workers
-- Configurable processing parameters for different hardware
-- Load balancing with Nginx
-
-## Development Notes
-
-**Common Issues**:
-- Virtual environment activation is required for backend development
-- Use UTF-8 encoding for files with Chinese comments
-- GPU acceleration available for production deployments
-- Large video files may require increased memory limits
-
-**Performance Optimization**:
-- Frame extraction limited to 8 FPS for processing efficiency
-- ROI tracking reduces processing area for better performance
-- Configurable batch sizes for memory management
-- Background processing prevents UI blocking
-- Numba JIT compilation for critical algorithm sections
-
-**Security Considerations**:
-- File type validation for video uploads
-- Size limits to prevent resource exhaustion
-- Sanitized API responses
-- No sensitive data in configuration files
-- CORS configuration for cross-origin requests
+### Security and Production Considerations
+- **File Validation**: Strict video file type and size validation (500MB limit)
+- **Hardware Adaptability**: Configurable processing parameters for different hardware capabilities
+- **CORS Configuration**: Proper cross-origin request handling for development and production
+- **Configuration Security**: No sensitive credentials in version control (environment variables required)
+- **Resource Management**: Automated memory cleanup and garbage collection for long-running processes
 
 ## Documentation References
-
-- **Root README.md**: Comprehensive testing framework and integration documentation
-- **backend/README.md**: Detailed API documentation and deployment guide
-- **backend/DEPLOYMENT.md**: Production deployment instructions
-- **frontend/ultrasound-vein-detection/PROJECT_SUMMARY.md**: Frontend completion report
-- **API Documentation**: Available at `http://localhost:8000/docs` (Swagger UI)
+- **API Documentation**: Available at `http://localhost:8000/docs` (Swagger UI) when backend is running
+- **Development Scripts**: Comprehensive usage in `scripts/deploy.sh help` and `scripts/dev-*.sh`
+- **Backend Deployment**: Detailed instructions in `backend/DEPLOYMENT.md`
+- **Frontend Documentation**: Complete project documentation in `frontend/ultrasound-vein-detection/PROJECT_SUMMARY.md`

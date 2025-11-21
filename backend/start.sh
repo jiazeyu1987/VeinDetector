@@ -30,9 +30,9 @@ mkdir -p uploads outputs logs
 
 # 启动服务
 echo "🌟 启动FastAPI服务器..."
-echo "📍 API文档地址: http://localhost:8000/docs"
-echo "📍 健康检查: http://localhost:8000/health"
+echo "📍 API文档地址: http://localhost:8001/docs"
+echo "📍 健康检查: http://localhost:8001/health"
 echo ""
 
 # 使用uvicorn启动
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload

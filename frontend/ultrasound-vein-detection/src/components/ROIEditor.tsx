@@ -7,8 +7,15 @@ interface ROIEditorProps {
   currentROI?: ROI;
   onROIChange: (roi: ROI) => void;
   onROIClear: () => void;
+  onPointSelect?: (point: {x: number, y: number}) => void; // 点击ROI选择点的回调
   className?: string;
   enabled?: boolean;
+  showROIBorder?: boolean; // 是否只显示边框（不显示填充和控制点）
+  showCenterPoints?: boolean; // 是否显示ROI中心采样点
+  centerPoints?: Array<{x: number, y: number, label: string, inMask?: boolean}>; // 中心点信息
+  selectedPoint?: {x: number, y: number} | null; // 用户选中的点坐标
+  enablePointSelection?: boolean; // 是否启用点选择功能
+  isPointSelectionMode?: boolean; // 是否处于点选择模式（直接点击选择点）
 }
 
 interface HandlePosition {
@@ -24,10 +31,17 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
   currentROI,
   onROIChange,
   onROIClear,
+  onPointSelect,
   className = '',
   enabled = true,
+  showROIBorder = true,
+  showCenterPoints = false,
+  centerPoints = [],
+  selectedPoint = null,
+  enablePointSelection = false,
+  isPointSelectionMode = false,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -92,8 +106,10 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       if (!enabled) {
         return;
       }
+
       const point = getCanvasCoordinates(e);
       if (currentROI) {
+        // 总是允许调整ROI大小和拖拽，即使边框不显示
         const handleIndex = getHandleAtPoint(point.x, point.y, currentROI);
         if (handleIndex !== null) {
           setIsResizing(true);
@@ -102,6 +118,13 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
           return;
         }
         if (isPointInROI(point.x, point.y, currentROI)) {
+          // 如果启用了点选择功能且按住Shift键，或者处于点选择模式，则选择点而不是拖拽ROI
+          if (enablePointSelection && (e.shiftKey || isPointSelectionMode) && onPointSelect) {
+            const relativeX = Math.round(point.x - currentROI.x);
+            const relativeY = Math.round(point.y - currentROI.y);
+            onPointSelect({ x: relativeX, y: relativeY });
+            return;
+          }
           setIsDragging(true);
           setStartPoint(point);
           return;
@@ -234,21 +257,139 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
 
   const drawROI = useCallback(
     (ctx: CanvasRenderingContext2D, roi: ROI) => {
-      ctx.fillStyle = 'rgba(59, 130, 246, 0.25)';
-      ctx.fillRect(roi.x, roi.y, roi.width, roi.height);
+      // 绘制ROI边框
       ctx.strokeStyle = '#3b82f6';
       ctx.lineWidth = 2;
       ctx.setLineDash([]);
       ctx.strokeRect(roi.x, roi.y, roi.width, roi.height);
-      const handles = getHandlePositions(roi);
-      ctx.fillStyle = '#3b82f6';
-      handles.forEach(handle => {
-        ctx.beginPath();
-        ctx.arc(handle.x, handle.y, 4, 0, 2 * Math.PI);
-        ctx.fill();
-      });
+
+      // 只有在调整大小时显示控制点
+      if (isResizing || isDragging) {
+        const handles = getHandlePositions(roi);
+        ctx.fillStyle = '#3b82f6';
+        handles.forEach(handle => {
+          ctx.beginPath();
+          ctx.arc(handle.x, handle.y, 4, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+      }
     },
-    [getHandlePositions],
+    [getHandlePositions, isResizing, isDragging, showROIBorder],
+  );
+
+  const drawCenterPoints = useCallback(
+    (ctx: CanvasRenderingContext2D, roi: ROI) => {
+      if (!showCenterPoints || centerPoints.length === 0) return;
+
+      // 绘制ROI中心采样点
+      centerPoints.forEach((point, index) => {
+        const x = roi.x + point.x;
+        const y = roi.y + point.y;
+
+        // 设置颜色：在mask内的点为绿色，不在的为红色
+        if (point.inMask) {
+          ctx.fillStyle = '#10b981'; // green-500
+          ctx.strokeStyle = '#065f46'; // green-800
+        } else {
+          ctx.fillStyle = '#ef4444'; // red-500
+          ctx.strokeStyle = '#991b1b'; // red-800
+        }
+
+        // 绘制圆点
+        ctx.beginPath();
+        ctx.arc(x, y, 6, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // 绘制标签背景
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        const text = point.label;
+        const textMetrics = ctx.measureText(text);
+        const textWidth = textMetrics.width;
+        const textHeight = 16;
+        const padding = 4;
+
+        ctx.fillRect(x + 10, y - textHeight/2, textWidth + padding * 2, textHeight);
+
+        // 绘制标签文字
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px sans-serif';
+        ctx.fillText(text, x + 10 + padding, y + textHeight/4);
+      });
+
+      // 绘制十字线到中心点
+      if (centerPoints.length > 0) {
+        const centerPoint = centerPoints.find(p => p.label === '中心');
+        if (centerPoint) {
+          const cx = roi.x + centerPoint.x;
+          const cy = roi.y + centerPoint.y;
+
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+
+          // 水平线
+          ctx.beginPath();
+          ctx.moveTo(roi.x, cy);
+          ctx.lineTo(roi.x + roi.width, cy);
+          ctx.stroke();
+
+          // 垂直线
+          ctx.beginPath();
+          ctx.moveTo(cx, roi.y);
+          ctx.lineTo(cx, roi.y + roi.height);
+          ctx.stroke();
+
+          ctx.setLineDash([]);
+        }
+      }
+    },
+    [showCenterPoints, centerPoints],
+  );
+
+  const drawSelectedPoint = useCallback(
+    (ctx: CanvasRenderingContext2D, roi: ROI) => {
+      if (!selectedPoint || !enablePointSelection) return;
+
+      const x = roi.x + selectedPoint.x;
+      const y = roi.y + selectedPoint.y;
+
+      // 绘制选中点（紫色，比其他点更大）
+      ctx.fillStyle = '#a855f7'; // purple-500
+      ctx.strokeStyle = '#6b21a8'; // purple-800
+      ctx.lineWidth = 3;
+
+      // 绘制圆点
+      ctx.beginPath();
+      ctx.arc(x, y, 8, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.stroke();
+
+      // 绘制脉冲效果（虚线圆）
+      ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(x, y, 15, 0, 2 * Math.PI);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 绘制坐标标签
+      const text = `(${selectedPoint.x}, ${selectedPoint.y})`;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.font = '12px sans-serif';
+      const textMetrics = ctx.measureText(text);
+      const textWidth = textMetrics.width;
+      const textHeight = 16;
+      const padding = 6;
+
+      ctx.fillRect(x + 15, y - textHeight/2, textWidth + padding * 2, textHeight);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(text, x + 15 + padding, y + textHeight/4);
+    },
+    [selectedPoint, enablePointSelection],
   );
 
   const drawCreatingROI = useCallback(
@@ -273,6 +414,8 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw grid
     ctx.strokeStyle = '#374151';
     ctx.lineWidth = 0.5;
     ctx.setLineDash([]);
@@ -289,13 +432,18 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       ctx.lineTo(canvas.width, y);
       ctx.stroke();
     }
-    if (currentROI && !isROIHidden) {
+
+    // Draw ROI if it exists and showROIBorder is true
+    if (currentROI && showROIBorder) {
       drawROI(ctx, currentROI);
+      drawCenterPoints(ctx, currentROI);
+      drawSelectedPoint(ctx, currentROI);
     }
+
     if (isDrawing) {
       drawCreatingROI(ctx);
     }
-  }, [currentROI, isDrawing, isROIHidden, drawROI, drawCreatingROI]);
+  }, [currentROI, isDrawing, isROIHidden, drawROI, drawCreatingROI, drawCenterPoints, drawSelectedPoint, showROIBorder, selectedPoint, enablePointSelection]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -320,11 +468,19 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
         return getHandlePositions(currentROI)[handleIndex].cursor;
       }
       if (isPointInROI(point.x, point.y, currentROI)) {
+        // 如果处于点选择模式或启用了点选择功能，显示指针光标
+        if (enablePointSelection && isPointSelectionMode) {
+          return 'pointer';
+        }
+        // 如果启用了点选择功能但未处于点选择模式，在按Shift键时显示指针光标
+        if (enablePointSelection && e.shiftKey) {
+          return 'pointer';
+        }
         return 'move';
       }
       return 'crosshair';
     },
-    [currentROI, getCanvasCoordinates, getHandleAtPoint, getHandlePositions, isPointInROI, enabled],
+    [currentROI, getCanvasCoordinates, getHandleAtPoint, getHandlePositions, isPointInROI, enabled, enablePointSelection, isPointSelectionMode],
   );
 
   return (

@@ -633,6 +633,8 @@ class EllipticalMorphSegmentor:
     - 使用椭圆形结构元素进行形态学操作
     - 提供形态学严格程度统一控制
     - 支持最大连通区域检测功能
+    - 支持ROI中心点连通域保留功能
+    - 支持选中点连通域保留功能
     - 适用于需要精确形状控制的分割任务
 
     参数（parameters）：
@@ -647,6 +649,10 @@ class EllipticalMorphSegmentor:
     - clahe_tile_grid_size: CLAHE网格大小
     - elliptical_constraint_enabled: 是否启用椭圆约束 (0/1)
     - max_connected_component_enabled: 是否启用最大连通区域检测 (0/1)
+    - roi_center_connected_component_enabled: 是否启用ROI中心点连通域保留 (0/1)
+    - selected_point_connected_component_enabled: 是否启用选中点连通域保留 (0/1)
+    - selected_point_x: 选中点的X坐标（相对于ROI左上角）
+    - selected_point_y: 选中点的Y坐标（相对于ROI左上角）
     """
 
     def segment(
@@ -698,6 +704,14 @@ class EllipticalMorphSegmentor:
         # 最大连通区域检测参数
         max_connected_component_enabled = bool(int(params.get("max_connected_component_enabled", 0)))
 
+        # ROI中心点连通域检测参数
+        roi_center_connected_component_enabled = bool(int(params.get("roi_center_connected_component_enabled", 0)))
+
+        # 选中点连通域检测参数
+        selected_point_connected_component_enabled = bool(int(params.get("selected_point_connected_component_enabled", 0)))
+        selected_point_x = int(params.get("selected_point_x", 0))
+        selected_point_y = int(params.get("selected_point_y", 0))
+
         # 预处理参数
         blur_ksize = int(params.get("blur_kernel_size", 5))
         if blur_ksize % 2 == 0:
@@ -708,6 +722,10 @@ class EllipticalMorphSegmentor:
         logger.info(
             "EllipticalMorph parameters: threshold_range=[%s,%s], ellipse=(%s,%s,%s°), morph_strength=%s, constraint_enabled=%s, max_connected_component=%s",
             threshold_min, threshold_max, ellipse_major, ellipse_minor, ellipse_angle, morph_strength, elliptical_constraint_enabled, max_connected_component_enabled
+        )
+        logger.info(
+            "EllipticalMorph point filtering: roi_center_enabled=%s, selected_point_enabled=%s, selected_point=(%s,%s)",
+            roi_center_connected_component_enabled, selected_point_connected_component_enabled, selected_point_x, selected_point_y
         )
 
         try:
@@ -748,8 +766,8 @@ class EllipticalMorphSegmentor:
                 processed = mask.copy()
 
             # 第四步：连通域分析和筛选
-            if max_connected_component_enabled:
-                # 最大连通区域检测：使用连通组件分析
+            if max_connected_component_enabled or roi_center_connected_component_enabled or selected_point_connected_component_enabled:
+                # 连通域检测模式：使用连通组件分析
                 if (processed > 0).sum() > 0:
                     # 使用连通组件分析（4连通：只有上下左右相连）
                     num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
@@ -761,33 +779,74 @@ class EllipticalMorphSegmentor:
                     # 显示所有连通区域的面积信息
                     for i in range(1, num_labels):
                         area = stats[i, cv2.CC_STAT_AREA]
-                        logger.info(f"连通区域 {i}: 面积={area}像素")
+                        logger.info(f"连通区域 {i}: 面积={area}像素, 中心=({centroids[i][0]:.1f}, {centroids[i][1]:.1f})")
 
-                    # 跳过背景标签（标签0），找到最大的连通区域
-                    if num_labels > 1:
-                        # stats的第四列是面积，找到最大连通区域（不包括背景）
-                        max_area_idx = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
-                        max_area = stats[max_area_idx, cv2.CC_STAT_AREA]
+                    # 初始化最终掩码
+                    final_mask = np.zeros_like(processed)
+                    kept_components = []
 
-                        # 创建只包含最大连通区域的mask
-                        mask_roi = (labels == max_area_idx).astype(np.uint8) * 255
-                        kept_contours = 1
+                    if max_connected_component_enabled:
+                        # 最大连通区域模式
+                        if num_labels > 1:
+                            max_area_idx = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+                            max_area = stats[max_area_idx, cv2.CC_STAT_AREA]
+                            final_mask[labels == max_area_idx] = 255
+                            kept_components.append(f"max_area_{max_area_idx}")
+                            logger.info(f"保留最大连通区域 {max_area_idx}，面积={max_area}")
 
-                        logger.info(
-                            "EllipticalMorph 4-connected component: kept largest component with area=%s pixels (total components: %s)",
-                            int(max_area),
-                            num_labels - 1
-                        )
+                    elif roi_center_connected_component_enabled:
+                        # ROI中心点连通域模式
+                        roi_center_x = roi_w // 2
+                        roi_center_y = roi_h // 2
+                        logger.info(f"ROI中心点坐标: ({roi_center_x}, {roi_center_y})")
 
-                        # 调试：检查绘制结果
-                        drawn_pixels = (mask_roi > 0).sum()
-                        logger.info(f"Max connected component: drawn_pixels={drawn_pixels}, max_area={max_area}")
-                    else:
-                        logger.warning("EllipticalMorph 4-connected component: no connected components found")
-                        mask_roi = processed.copy()
-                        kept_contours = "original"
+                        # 查找包含ROI中心点的连通区域
+                        center_label = labels[roi_center_y, roi_center_x] if 0 <= roi_center_y < roi_h and 0 <= roi_center_x < roi_w else 0
+
+                        if center_label > 0:
+                            final_mask[labels == center_label] = 255
+                            kept_components.append(f"roi_center_{center_label}")
+                            area = stats[center_label, cv2.CC_STAT_AREA]
+                            logger.info(f"保留ROI中心连通区域 {center_label}，面积={area}")
+                        else:
+                            logger.warning("ROI中心点不在任何连通区域内，保留所有连通区域")
+                            final_mask = processed.copy()
+                            kept_components.append("all_regions")
+
+                    elif selected_point_connected_component_enabled:
+                        # 选中点连通域模式
+                        logger.info(f"选中点坐标: ({selected_point_x}, {selected_point_y})")
+
+                        # 检查选中点是否在ROI范围内
+                        if 0 <= selected_point_x < roi_w and 0 <= selected_point_y < roi_h:
+                            # 查找包含选中点的连通区域
+                            selected_label = labels[selected_point_y, selected_point_x]
+
+                            if selected_label > 0:
+                                final_mask[labels == selected_label] = 255
+                                kept_components.append(f"selected_point_{selected_label}")
+                                area = stats[selected_label, cv2.CC_STAT_AREA]
+                                logger.info(f"保留选中点连通区域 {selected_label}，面积={area}")
+                            else:
+                                logger.warning("选中点不在任何连通区域内，保留所有连通区域")
+                                final_mask = processed.copy()
+                                kept_components.append("all_regions")
+                        else:
+                            logger.warning(f"选中点 ({selected_point_x}, {selected_point_y}) 超出ROI范围 ({roi_w}x{roi_h})，保留所有连通区域")
+                            final_mask = processed.copy()
+                            kept_components.append("all_regions")
+
+                    mask_roi = final_mask
+                    kept_contours = len(kept_components)
+
+                    logger.info(
+                        "EllipticalMorph connected component filtering: kept %s components (%s), total pixels=%s",
+                        kept_contours,
+                        ", ".join(kept_components),
+                        int((mask_roi > 0).sum())
+                    )
                 else:
-                    logger.warning("EllipticalMorph max connected component: no white pixels in processed mask")
+                    logger.warning("EllipticalMorph connected component: no white pixels in processed mask")
                     mask_roi = processed.copy()
                     kept_contours = "empty"
             else:

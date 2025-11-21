@@ -65,12 +65,24 @@ class SamusAnalysisRequest(BaseModel):
     )
 
 
+class CenterPoint(BaseModel):
+    """ROI中心采样点信息"""
+    x: int = Field(description="相对于ROI左上角的X坐标")
+    y: int = Field(description="相对于ROI左上角的Y坐标")
+    label: str = Field(description="点标签（如'中心'、'左上'等）")
+    in_mask: bool = Field(default=False, description="该点是否在分割mask内")
+
+
 class SamusMaskResponse(BaseModel):
     """静脉分割结果（简化为 0/1 mask）"""
 
     width: int = Field(description="图像宽度（像素）")
     height: int = Field(description="图像高度（像素）")
     mask: List[List[int]] = Field(description="二维 0/1 掩码，与图像同宽高")
+    center_points: Optional[List[CenterPoint]] = Field(default=None, description="ROI中心采样点信息")
+    roi_center_connected: bool = Field(default=False, description="是否启用了ROI中心点连通域")
+    max_connected_component: bool = Field(default=False, description="是否启用了最大连通域")
+    processing_info: Optional[Dict[str, Any]] = Field(default=None, description="处理信息")
 
 
 class VideoProcessingTask(BaseModel):

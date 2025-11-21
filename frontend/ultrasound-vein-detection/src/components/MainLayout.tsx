@@ -63,6 +63,8 @@ export const MainLayout: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [segmentationMask, setSegmentationMask] = useState<number[][] | null>(null);
   const [showSegmentationOverlay, setShowSegmentationOverlay] = useState(true);
+  const [showCenterPoints, setShowCenterPoints] = useState(false);
+  const [analysisCenterPoints, setAnalysisCenterPoints] = useState<Array<{x: number, y: number, label: string, inMask?: boolean}>>([]);
   // 当前实际使用的是 segmentation_models_pytorch 提供的 U-Net (ResNet34, ImageNet encoder)
   const [segmentationModel, setSegmentationModel] = useState('elliptical_morph');
   const [showSettingsPanel, setShowSettingsPanel] = useState(true);
@@ -126,10 +128,10 @@ export const MainLayout: React.FC = () => {
   const [simplePreStrength, setSimplePreStrength] = useState(0.5);
   const [simpleMorphStrength, setSimpleMorphStrength] = useState(0.5);
 
-  // 阈值分割参数
+  // 阈值分割参数 (统一使用0-255尺度)
   const [ellipticalMorphParams, setEllipticalMorphParams] = useState<EllipticalMorphParams>({
-    thresholdMin: 50,
-    thresholdMax: 200,
+    thresholdMin: 20,  // 更合理的起始阈值，根据采样点灰度值调整
+    thresholdMax: 130, // 更合理的结束阈值，确保包含采样点中的有效值
     ellipseMajorAxis: 15,
     ellipseMinorAxis: 10,
     ellipseAngle: 0,
@@ -141,12 +143,19 @@ export const MainLayout: React.FC = () => {
   const [autoAnalysisEnabled, setAutoAnalysisEnabled] = useState(false); // 椭圆形态学自动分析开关
   const [ellipticalConstraintEnabled, setEllipticalConstraintEnabled] = useState(false); // 椭圆形态学限制开关
   const [maxConnectedComponentEnabled, setMaxConnectedComponentEnabled] = useState(false); // 最大连通区域检测开关
+  const [roiCenterConnectedComponentEnabled, setRoiCenterConnectedComponentEnabled] = useState(true); // ROI中心点连通域检测开关
+  const [selectedPointConnectedComponentEnabled, setSelectedPointConnectedComponentEnabled] = useState(false); // 选中点连通域检测开关
+  const [selectedPoint, setSelectedPoint] = useState<{x: number, y: number} | null>(null); // 用户选中的点坐标
+  const [isPointSelectionMode, setIsPointSelectionMode] = useState(false); // 点选择模式状态
 
   // 灰度值相关状态
   const [showGrayscaleInfo, setShowGrayscaleInfo] = useState(false); // 显示灰度值信息
   const [currentGrayscaleValue, setCurrentGrayscaleValue] = useState<number | null>(null); // 当前鼠标位置的灰度值
   const [autoThresholdEnabled, setAutoThresholdEnabled] = useState(false); // 启用自动阈值功能
   const [testMode, setTestMode] = useState(false); // 测试模式
+
+  // ROI显示控制状态
+  const [showROIBorder, setShowROIBorder] = useState(true); // 控制ROI边框的显示/隐藏
   const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const displayedTotalFrames = currentVideo ? Math.max(1, Math.floor(currentVideo.frameCount / frameStep)) : 0;
   const timeAxisProgress =
@@ -334,10 +343,10 @@ export const MainLayout: React.FC = () => {
           circularity_min: circularityMin,
         };
       } else if (cvName === 'elliptical_morph') {
-        // 椭圆形形态学参数
+        // 椭圆形形态学参数 - 直接发送0-255值
         parameters = {
-          threshold_min: ellipticalMorphParams.thresholdMin,
-          threshold_max: ellipticalMorphParams.thresholdMax,
+          threshold_min: ellipticalMorphParams.thresholdMin,  // 直接使用0-255
+          threshold_max: ellipticalMorphParams.thresholdMax,  // 直接使用0-255
           ellipse_major_axis: ellipticalMorphParams.ellipseMajorAxis,
           ellipse_minor_axis: ellipticalMorphParams.ellipseMinorAxis,
           ellipse_angle: ellipticalMorphParams.ellipseAngle,
@@ -347,6 +356,10 @@ export const MainLayout: React.FC = () => {
           clahe_tile_grid_size: ellipticalMorphParams.claheTileGridSize,
           elliptical_constraint_enabled: ellipticalConstraintEnabled ? 1 : 0,
           max_connected_component_enabled: maxConnectedComponentEnabled ? 1 : 0,
+          roi_center_connected_component_enabled: roiCenterConnectedComponentEnabled ? 1 : 0,
+          selected_point_connected_component_enabled: selectedPointConnectedComponentEnabled ? 1 : 0,
+          selected_point_x: selectedPoint?.x || 0,
+          selected_point_y: selectedPoint?.y || 0,
         };
       }
       // 调试日志：查看前端实际发送的模型和最新参数
@@ -358,6 +371,21 @@ export const MainLayout: React.FC = () => {
         hasParameters: Boolean(parameters),
         parameterCount: parameters ? Object.keys(parameters).length : 0,
         parameters,
+        // 显示选中点连通域相关信息
+        selectedPointInfo: {
+          enabled: selectedPointConnectedComponentEnabled,
+          selectedPoint: selectedPoint,
+          roiInfo: currentROI ? {
+            x: currentROI.x,
+            y: currentROI.y,
+            width: currentROI.width,
+            height: currentROI.height
+          } : null,
+          absolutePointCoords: selectedPoint && currentROI ? {
+            x: currentROI.x + selectedPoint.x,
+            y: currentROI.y + selectedPoint.y
+          } : null
+        },
         // 显示关键参数的当前值
         keyParams: {
           enhanced: cvName.includes('enhanced') ? {
@@ -374,6 +402,8 @@ export const MainLayout: React.FC = () => {
             thresholdMin: ellipticalMorphParams.thresholdMin,
             thresholdMax: ellipticalMorphParams.thresholdMax,
             morphStrength: ellipticalMorphParams.morphStrength,
+            maxConnectedComponent: maxConnectedComponentEnabled,
+            roiCenterConnectedComponent: roiCenterConnectedComponentEnabled,
           } : null,
         }
       });
@@ -385,6 +415,11 @@ export const MainLayout: React.FC = () => {
       });
       if (response.success && response.data) {
         setSegmentationMask(response.data.mask);
+        // 获取中心点信息（如果后端返回了）
+        if (response.data.centerPoints) {
+          setAnalysisCenterPoints(response.data.centerPoints);
+          setShowCenterPoints(true); // 自动显示中心点
+        }
         setIsAnalyzing(false);
         setAnalysisProgress(100);
       } else {
@@ -413,10 +448,11 @@ export const MainLayout: React.FC = () => {
       const centerThreshold = grayscaleValue;
       const thresholdRange = 20; // 阈值范围
 
+      // 使用0-255范围
       setEllipticalMorphParams(prev => ({
         ...prev,
         thresholdMin: Math.max(0, centerThreshold - thresholdRange),
-        thresholdMax: Math.min(255, centerThreshold + thresholdRange),
+        thresholdMax: Math.min(255, centerThreshold + thresholdRange), // 0-255范围
       }));
     } else if (cvName === 'cv_simple_center') {
       // 简单中心检测：基于灰度值调整预处理强度
@@ -451,6 +487,26 @@ export const MainLayout: React.FC = () => {
 
     // 如果从VideoPlayer传递了灰度值和坐标，使用它们
     if (grayscaleValue !== undefined && x !== undefined && y !== undefined) {
+      setCurrentGrayscaleValue(grayscaleValue); // 设置当前灰度值用于显示
+
+      // 🔍 关键调试：验证Canvas数据是否与鼠标看到的灰度值一致
+      if (frameCanvasRef.current) {
+        try {
+          const canvas = frameCanvasRef.current;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            // 获取鼠标位置的实际Canvas像素值
+            const imageData = ctx.getImageData(x, y, 1, 1);
+            const data = imageData.data;
+            const canvasGrayscale = Math.round(0.299 * data[0] + 0.587 * data[1] + 0.114 * data[2]);
+
+            console.log(`${grayscaleValue}/${canvasGrayscale}`); // A/B格式：鼠标值/Canvas实际值
+          }
+        } catch (error) {
+          // 静默处理错误
+        }
+      }
+
       handleGrayscaleBasedThreshold(grayscaleValue, x, y);
       return;
     }
@@ -555,6 +611,8 @@ export const MainLayout: React.FC = () => {
     ellipticalMorphParams.claheClipLimit,
     ellipticalMorphParams.claheTileGridSize,
     ellipticalConstraintEnabled, // 添加椭圆限制状态监听
+    maxConnectedComponentEnabled, // 添加最大连通区域状态监听
+    roiCenterConnectedComponentEnabled, // 添加ROI中心点连通域状态监听
     triggerAutoAnalysis
   ]);
 
@@ -671,8 +729,8 @@ export const MainLayout: React.FC = () => {
         // scroll down: zoom out
         nextZoom = prevZoom * (1 - zoomStep);
       }
-      const minZoom = 0.5;
-      const maxZoom = 3;
+      const minZoom = 0.1; // 最小缩放：10%
+      const maxZoom = 10; // 最大缩放：1000%，支持高倍放大
       if (nextZoom < minZoom) nextZoom = minZoom;
       if (nextZoom > maxZoom) nextZoom = maxZoom;
       return nextZoom;
@@ -806,6 +864,13 @@ export const MainLayout: React.FC = () => {
               <span>{showSegmentationOverlay ? '隐藏分割结果' : '显示分割结果'}</span>
             </button>
             <button
+              onClick={() => setShowCenterPoints(prev => !prev)}
+              disabled={!currentROI || analysisCenterPoints.length === 0}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded flex items-center space-x-2 transition-colors"
+            >
+              <span>{showCenterPoints ? '隐藏中心点' : '显示中心点'}</span>
+            </button>
+            <button
               onClick={() => setShowSettingsPanel(prev => !prev)}
               className={`p-2 rounded transition-colors ${
                 showSettingsPanel ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-600 hover:bg-gray-500'
@@ -883,6 +948,20 @@ export const MainLayout: React.FC = () => {
                     </span>
                   )}
 
+                  {/* ROI边框显示/隐藏按钮 */}
+                  {currentROI && (
+                    <button
+                      onClick={() => {
+                        console.log('边框按钮点击 - 前值:', showROIBorder, '后值:', !showROIBorder);
+                        setShowROIBorder(!showROIBorder);
+                      }}
+                      className="text-xs bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded text-white border border-gray-500 transition-colors duration-150"
+                      title={showROIBorder ? "隐藏ROI边框" : "显示ROI边框"}
+                    >
+                      {showROIBorder ? "👁️ 边框" : "👁️‍🗨️ 边框"}
+                    </button>
+                  )}
+
                   {/* 灰度值显示 */}
                   {showGrayscaleInfo && currentGrayscaleValue !== null && (
                     <span className="text-xs bg-gray-700 px-2 py-1 rounded text-white border border-gray-600">
@@ -950,7 +1029,20 @@ export const MainLayout: React.FC = () => {
                       currentROI={currentROI}
                       onROIChange={setCurrentROI}
                       onROIClear={() => setCurrentROI(null)}
+                      onPointSelect={(point) => {
+                        setSelectedPoint(point);
+                        // 选择点后自动退出点选择模式
+                        if (isPointSelectionMode) {
+                          setIsPointSelectionMode(false);
+                        }
+                      }}
                       className="w-full h-full"
+                      showROIBorder={showROIBorder}
+                      showCenterPoints={showCenterPoints}
+                      centerPoints={analysisCenterPoints}
+                      selectedPoint={selectedPoint}
+                      enablePointSelection={selectedPointConnectedComponentEnabled || isPointSelectionMode}
+                      isPointSelectionMode={isPointSelectionMode}
                     />
                     {segmentationMask && showSegmentationOverlay && (
                       <canvas
@@ -1740,7 +1832,7 @@ export const MainLayout: React.FC = () => {
                       <input
                         type="range"
                         min={0}
-                        max={500}
+                        max={255}
                         step={1}
                         value={ellipticalMorphParams.thresholdMin}
                         onChange={e =>
@@ -1753,7 +1845,7 @@ export const MainLayout: React.FC = () => {
                       />
                       <div className="flex justify-between text-xs text-gray-500 mt-1">
                         <span>0</span>
-                        <span>500</span>
+                        <span>255</span>
                       </div>
                     </div>
                     <div className="mb-2">
@@ -1764,7 +1856,7 @@ export const MainLayout: React.FC = () => {
                       <input
                         type="range"
                         min={0}
-                        max={500}
+                        max={255}
                         step={1}
                         value={ellipticalMorphParams.thresholdMax}
                         onChange={e =>
@@ -1777,7 +1869,7 @@ export const MainLayout: React.FC = () => {
                       />
                       <div className="flex justify-between text-xs text-gray-500 mt-1">
                         <span>0</span>
-                        <span>500</span>
+                        <span>255</span>
                       </div>
                     </div>
                   </div>
@@ -1800,6 +1892,102 @@ export const MainLayout: React.FC = () => {
                     <p className="text-xs text-gray-400 mt-2 ml-6">
                       启用后，只保留mask中最大的连通区域，删除其他区域
                     </p>
+                  </div>
+
+                  {/* ROI中心点连通域检测 */}
+                  <div className="bg-gray-800 rounded-lg p-3">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={roiCenterConnectedComponentEnabled}
+                          onChange={e => setRoiCenterConnectedComponentEnabled(e.target.checked)}
+                          className="h-4 w-4 text-green-600 bg-gray-700 border-gray-600 rounded focus:ring-green-500 focus:ring-2"
+                        />
+                        <span className="text-sm font-medium">🎯 ROI中心点连通域检测</span>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded ${roiCenterConnectedComponentEnabled ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
+                        {roiCenterConnectedComponentEnabled ? '已启用' : '已禁用'}
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-400 mt-2 ml-6">
+                      启用后，只保留ROI中心点所在的连通区域，删除其他区域
+                    </p>
+                  </div>
+
+                  {/* 选中点连通域检测 */}
+                  <div className="bg-gray-800 rounded-lg p-3">
+                    <label className="flex items-center justify-between cursor-pointer">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedPointConnectedComponentEnabled}
+                          onChange={e => {
+                            setSelectedPointConnectedComponentEnabled(e.target.checked);
+                            // 当启用功能时，自动进入点选择模式
+                            if (e.target.checked && !selectedPoint) {
+                              // 可以在这里添加进入点选择模式的逻辑
+                            }
+                          }}
+                          className="h-4 w-4 text-purple-600 bg-gray-700 border-gray-600 rounded focus:ring-purple-500 focus:ring-2"
+                        />
+                        <span className="text-sm font-medium">📍 选中点连通域检测</span>
+                      </div>
+                      <span className={`text-xs px-2 py-1 rounded ${selectedPointConnectedComponentEnabled ? 'bg-purple-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
+                        {selectedPointConnectedComponentEnabled ? '已启用' : '已禁用'}
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-400 mt-2 ml-6">
+                      启用后，点击ROI选择点，只保留该点所在的最大连通区域
+                    </p>
+
+                    {/* 选择关键点按钮 */}
+                    {selectedPointConnectedComponentEnabled && (
+                      <div className="mt-3 ml-6">
+                        <button
+                          onClick={() => {
+                            // 切换点选择模式
+                            setIsPointSelectionMode(!isPointSelectionMode);
+                            if (!isPointSelectionMode) {
+                              // 进入点选择模式时的提示
+                              setTimeout(() => {
+                                alert('🎯 已进入点选择模式！\n\n请在ROI区域内点击您想要分析的关键点位置。\n\n提示：您也可以按住Shift键点击ROI区域进行选择。');
+                              }, 100);
+                            }
+                          }}
+                          className={`px-3 py-2 text-white text-sm rounded-lg transition-colors duration-200 flex items-center space-x-2 ${
+                            isPointSelectionMode
+                              ? 'bg-green-600 hover:bg-green-700'
+                              : 'bg-purple-600 hover:bg-purple-700'
+                          }`}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" />
+                          </svg>
+                          <span>{isPointSelectionMode ? '✅ 点选择模式已开启' : '🎯 选择关键点'}</span>
+                        </button>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {isPointSelectionMode
+                            ? '现在点击ROI区域内的任意位置选择关键点'
+                            : '点击按钮进入选择模式，或按住Shift键点击ROI区域选择点'
+                          }
+                        </p>
+                      </div>
+                    )}
+
+                    {selectedPointConnectedComponentEnabled && (
+                      <div className="mt-2 ml-6 text-xs text-gray-300">
+                        当前选中点: {selectedPoint ? `(${selectedPoint.x}, ${selectedPoint.y})` : '请点击ROI选择点'}
+                        {selectedPoint && (
+                          <button
+                            onClick={() => setSelectedPoint(null)}
+                            className="ml-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded text-xs"
+                          >
+                            清除选中点
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

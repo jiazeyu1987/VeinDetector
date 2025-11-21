@@ -24,6 +24,7 @@ from models import (
     ROIRegion,
     SamusAnalysisRequest,
     SamusMaskResponse,
+    CenterPoint,
 )
 from video_processor import VideoProcessor
 from vein_detector import VeinDetector, VeinRegion
@@ -356,12 +357,21 @@ async def health_check():
 @app.post("/analysis/samus", response_model=APIResponse)
 async def analyze_frame_with_samus(request: SamusAnalysisRequest):
     """
-    使用 SAMUS 模型对当前帧进行静脉血管分割。
-
-    前端应传入：
-    - image_data_url: 当前帧的 data URL（来自 canvas.toDataURL）
+    使用 SAMUS 模型对当前帧进行静脉分割。
+ 
+    前端输入格式：
+    - image_data_url: 当前帧的 data URL（即 canvas.toDataURL）
     - roi: 当前帧上的 ROI 区域
     """
+    logger.info(
+        "API /analysis/samus called: model=%s, roi=(x=%s,y=%s,w=%s,h=%s), params_keys=%s",
+        request.model_name,
+        getattr(request.roi, 'x', None),
+        getattr(request.roi, 'y', None),
+        getattr(request.roi, 'width', None),
+        getattr(request.roi, 'height', None),
+        list(request.parameters.keys()) if request.parameters else [],
+    )
     try:
         image = decode_image_from_data_url(request.image_data_url)
     except ValueError as exc:
@@ -439,11 +449,55 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
         raise HTTPException(status_code=500, detail="分割结果 mask 维度错误")
 
     height, width = mask.shape
-    response = SamusMaskResponse(width=width, height=height, mask=mask.astype(int).tolist())
+
+    # 生成ROI中心采样点信息
+    center_points = []
+    sampling_points = [
+        {"x": int(width * 0.25), "y": int(height * 0.25), "label": "左上"},
+        {"x": int(width * 0.25), "y": int(height * 0.75), "label": "左下"},
+        {"x": int(width * 0.5), "y": int(height * 0.5), "label": "中心"},
+        {"x": int(width * 0.75), "y": int(height * 0.25), "label": "右上"},
+        {"x": int(width * 0.75), "y": int(height * 0.75), "label": "右下"}
+    ]
+
+    for point in sampling_points:
+        in_mask = (point["y"] < height and point["x"] < width and mask[point["y"], point["x"]] == 1)
+        center_points.append(CenterPoint(
+            x=point["x"],
+            y=point["y"],
+            label=point["label"],
+            in_mask=in_mask
+        ))
+
+    # 检查连通域参数
+    roi_center_connected = False
+    max_connected_component = False
+    if request.parameters:
+        roi_center_connected = request.parameters.get("roi_center_connected_component_enabled", 0) == 1
+        max_connected_component = request.parameters.get("max_connected_component_enabled", 0) == 1
+
+    # 构建处理信息
+    processing_info = {
+        "algorithm": model_name,
+        "roi_size": f"{width}x{height}",
+        "total_pixels": int(np.sum(mask)),
+        "roi_center_connected_enabled": roi_center_connected,
+        "max_connected_component_enabled": max_connected_component
+    }
+
+    response = SamusMaskResponse(
+        width=width,
+        height=height,
+        mask=mask.astype(int).tolist(),
+        center_points=[cp.dict() for cp in center_points],
+        roi_center_connected=roi_center_connected,
+        max_connected_component=max_connected_component,
+        processing_info=processing_info
+    )
 
     return APIResponse(
         success=True,
-        message="SAMUS 分割完成",
+        message=f"{model_name} 分割完成",
         data=response.dict(),
     )
 
@@ -548,9 +602,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=True,
         log_level="info"
     )
-
-
