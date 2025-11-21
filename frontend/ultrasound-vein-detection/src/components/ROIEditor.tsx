@@ -109,7 +109,19 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
 
       const point = getCanvasCoordinates(e);
       if (currentROI) {
-        // 总是允许调整ROI大小和拖拽，即使边框不显示
+        // 如果启用了点选择功能，ROI的所有交互都被禁用，只能选择点
+        if (enablePointSelection) {
+          if (isPointInROI(point.x, point.y, currentROI) && onPointSelect) {
+            const relativeX = Math.round(point.x - currentROI.x);
+            const relativeY = Math.round(point.y - currentROI.y);
+            onPointSelect({ x: relativeX, y: relativeY });
+            return;
+          }
+          // 如果启用了点选择但点击不在ROI内，不做任何操作
+          return;
+        }
+
+        // 未启用点选择功能时，允许调整ROI大小和拖拽
         const handleIndex = getHandleAtPoint(point.x, point.y, currentROI);
         if (handleIndex !== null) {
           setIsResizing(true);
@@ -118,13 +130,6 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
           return;
         }
         if (isPointInROI(point.x, point.y, currentROI)) {
-          // 如果启用了点选择功能且按住Shift键，或者处于点选择模式，则选择点而不是拖拽ROI
-          if (enablePointSelection && (e.shiftKey || isPointSelectionMode) && onPointSelect) {
-            const relativeX = Math.round(point.x - currentROI.x);
-            const relativeY = Math.round(point.y - currentROI.y);
-            onPointSelect({ x: relativeX, y: relativeY });
-            return;
-          }
           setIsDragging(true);
           setStartPoint(point);
           return;
@@ -134,12 +139,21 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       setStartPoint(point);
       setCurrentPoint(point);
     },
-    [getCanvasCoordinates, currentROI, getHandleAtPoint, getHandlePositions, isPointInROI, enabled],
+    [getCanvasCoordinates, currentROI, getHandleAtPoint, getHandlePositions, isPointInROI, enabled, enablePointSelection, onPointSelect],
   );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       const point = getCanvasCoordinates(e);
+
+      // 如果启用了点选择功能，禁用所有ROI交互操作
+      if (enablePointSelection) {
+        if (isDrawing && startPoint) {
+          setCurrentPoint(point);
+        }
+        return;
+      }
+
       if (isDrawing && startPoint) {
         setCurrentPoint(point);
       } else if (isDragging && startPoint && currentROI) {
@@ -213,6 +227,7 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       imageHeight,
       getHandlePositions,
       onROIChange,
+      enablePointSelection,
     ],
   );
 
@@ -295,11 +310,14 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
           ctx.strokeStyle = '#991b1b'; // red-800
         }
 
-        // 绘制圆点
+        // 绘制小十字
+        ctx.lineWidth = 1; // 更细的线条
+        const crossSize = 3; // 更短的十字
         ctx.beginPath();
-        ctx.arc(x, y, 6, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.lineWidth = 2;
+        ctx.moveTo(x - crossSize, y);
+        ctx.lineTo(x + crossSize, y);
+        ctx.moveTo(x, y - crossSize);
+        ctx.lineTo(x, y + crossSize);
         ctx.stroke();
 
         // 绘制标签背景
@@ -360,18 +378,22 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
       ctx.strokeStyle = '#6b21a8'; // purple-800
       ctx.lineWidth = 3;
 
-      // 绘制圆点
+      // 绘制选中十字（比关键点稍大）
+      ctx.lineWidth = 2;
+      const crossSize = 5; // 比普通关键点大一点的十字
       ctx.beginPath();
-      ctx.arc(x, y, 8, 0, 2 * Math.PI);
-      ctx.fill();
+      ctx.moveTo(x - crossSize, y);
+      ctx.lineTo(x + crossSize, y);
+      ctx.moveTo(x, y - crossSize);
+      ctx.lineTo(x, y + crossSize);
       ctx.stroke();
 
       // 绘制脉冲效果（虚线圆）
       ctx.strokeStyle = 'rgba(168, 85, 247, 0.5)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
       ctx.beginPath();
-      ctx.arc(x, y, 15, 0, 2 * Math.PI);
+      ctx.arc(x, y, 10, 0, 2 * Math.PI);
       ctx.stroke();
       ctx.setLineDash([]);
 
@@ -468,12 +490,8 @@ export const ROIEditor: React.FC<ROIEditorProps> = ({
         return getHandlePositions(currentROI)[handleIndex].cursor;
       }
       if (isPointInROI(point.x, point.y, currentROI)) {
-        // 如果处于点选择模式或启用了点选择功能，显示指针光标
-        if (enablePointSelection && isPointSelectionMode) {
-          return 'pointer';
-        }
-        // 如果启用了点选择功能但未处于点选择模式，在按Shift键时显示指针光标
-        if (enablePointSelection && e.shiftKey) {
+        // 如果启用了点选择功能，总是显示指针光标，因为优先选择点
+        if (enablePointSelection) {
           return 'pointer';
         }
         return 'move';

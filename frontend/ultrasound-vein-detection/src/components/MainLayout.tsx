@@ -130,8 +130,8 @@ export const MainLayout: React.FC = () => {
 
   // 阈值分割参数 (统一使用0-255尺度)
   const [ellipticalMorphParams, setEllipticalMorphParams] = useState<EllipticalMorphParams>({
-    thresholdMin: 20,  // 更合理的起始阈值，根据采样点灰度值调整
-    thresholdMax: 130, // 更合理的结束阈值，确保包含采样点中的有效值
+    thresholdMin: 50,  // 默认阈值下限，用户要求的最小值是0，默认值是50
+    thresholdMax: 127, // 默认阈值上限，用户要求的最大值是255，默认值是127
     ellipseMajorAxis: 15,
     ellipseMinorAxis: 10,
     ellipseAngle: 0,
@@ -140,13 +140,47 @@ export const MainLayout: React.FC = () => {
     claheClipLimit: 2.0,
     claheTileGridSize: 8,
   });
-  const [autoAnalysisEnabled, setAutoAnalysisEnabled] = useState(false); // 椭圆形态学自动分析开关
+  const [autoAnalysisEnabled, setAutoAnalysisEnabled] = useState(false); // 椭圆形态学自动分析开关 (默认禁用)
   const [ellipticalConstraintEnabled, setEllipticalConstraintEnabled] = useState(false); // 椭圆形态学限制开关
   const [maxConnectedComponentEnabled, setMaxConnectedComponentEnabled] = useState(false); // 最大连通区域检测开关
   const [roiCenterConnectedComponentEnabled, setRoiCenterConnectedComponentEnabled] = useState(true); // ROI中心点连通域检测开关
   const [selectedPointConnectedComponentEnabled, setSelectedPointConnectedComponentEnabled] = useState(false); // 选中点连通域检测开关
   const [selectedPoint, setSelectedPoint] = useState<{x: number, y: number} | null>(null); // 用户选中的点坐标
   const [isPointSelectionMode, setIsPointSelectionMode] = useState(false); // 点选择模式状态
+
+  // 连通组件检测选项互斥处理函数
+  const handleMaxConnectedComponentChange = useCallback((enabled: boolean) => {
+    if (enabled) {
+      // 启用最大连通区域检测时，禁用其他两个选项
+      setMaxConnectedComponentEnabled(true);
+      setRoiCenterConnectedComponentEnabled(false);
+      setSelectedPointConnectedComponentEnabled(false);
+    } else {
+      setMaxConnectedComponentEnabled(false);
+    }
+  }, []);
+
+  const handleRoiCenterConnectedComponentChange = useCallback((enabled: boolean) => {
+    if (enabled) {
+      // 启用ROI中心点连通域检测时，禁用其他两个选项
+      setMaxConnectedComponentEnabled(false);
+      setRoiCenterConnectedComponentEnabled(true);
+      setSelectedPointConnectedComponentEnabled(false);
+    } else {
+      setRoiCenterConnectedComponentEnabled(false);
+    }
+  }, []);
+
+  const handleSelectedPointConnectedComponentChange = useCallback((enabled: boolean) => {
+    if (enabled) {
+      // 启用选中点连通域检测时，禁用其他两个选项
+      setMaxConnectedComponentEnabled(false);
+      setRoiCenterConnectedComponentEnabled(false);
+      setSelectedPointConnectedComponentEnabled(true);
+    } else {
+      setSelectedPointConnectedComponentEnabled(false);
+    }
+  }, []);
 
   // 灰度值相关状态
   const [showGrayscaleInfo, setShowGrayscaleInfo] = useState(false); // 显示灰度值信息
@@ -1880,7 +1914,7 @@ export const MainLayout: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={maxConnectedComponentEnabled}
-                          onChange={e => setMaxConnectedComponentEnabled(e.target.checked)}
+                          onChange={e => handleMaxConnectedComponentChange(e.target.checked)}
                           className="h-4 w-4 text-green-600 bg-gray-700 border-gray-600 rounded focus:ring-green-500 focus:ring-2"
                         />
                         <span className="text-sm font-medium">🔗 最大连通区域检测</span>
@@ -1901,7 +1935,7 @@ export const MainLayout: React.FC = () => {
                         <input
                           type="checkbox"
                           checked={roiCenterConnectedComponentEnabled}
-                          onChange={e => setRoiCenterConnectedComponentEnabled(e.target.checked)}
+                          onChange={e => handleRoiCenterConnectedComponentChange(e.target.checked)}
                           className="h-4 w-4 text-green-600 bg-gray-700 border-gray-600 rounded focus:ring-green-500 focus:ring-2"
                         />
                         <span className="text-sm font-medium">🎯 ROI中心点连通域检测</span>
@@ -1923,7 +1957,7 @@ export const MainLayout: React.FC = () => {
                           type="checkbox"
                           checked={selectedPointConnectedComponentEnabled}
                           onChange={e => {
-                            setSelectedPointConnectedComponentEnabled(e.target.checked);
+                            handleSelectedPointConnectedComponentChange(e.target.checked);
                             // 当启用功能时，自动进入点选择模式
                             if (e.target.checked && !selectedPoint) {
                               // 可以在这里添加进入点选择模式的逻辑
