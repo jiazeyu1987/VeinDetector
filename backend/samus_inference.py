@@ -653,6 +653,7 @@ class EllipticalMorphSegmentor:
     - selected_point_connected_component_enabled: 是否启用选中点连通域保留 (0/1)
     - selected_point_x: 选中点的X坐标（相对于ROI左上角）
     - selected_point_y: 选中点的Y坐标（相对于ROI左上角）
+    - preprocessing_enabled: 是否启用预处理（高斯模糊+CLAHE）(0/1)
     """
 
     def segment(
@@ -712,6 +713,9 @@ class EllipticalMorphSegmentor:
         selected_point_x = int(params.get("selected_point_x", 0))
         selected_point_y = int(params.get("selected_point_y", 0))
 
+        # 预处理控制参数
+        preprocessing_enabled = bool(int(params.get("preprocessing_enabled", 1)))  # 默认启用
+
         # 预处理参数
         blur_ksize = int(params.get("blur_kernel_size", 5))
         if blur_ksize % 2 == 0:
@@ -751,18 +755,28 @@ class EllipticalMorphSegmentor:
 
                 processed = mask.copy()
             else:
-                # 常规模式：使用原有预处理流程
-                # 第一步：预处理
-                blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
-                clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
-                enhanced = clahe.apply(blurred)
+                # 常规模式：根据preprocessing_enabled参数决定是否预处理
+                if preprocessing_enabled:
+                    # 第一步：预处理
+                    blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
+                    clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
+                    enhanced = clahe.apply(blurred)
 
-                # 第二步：双阈值分割
-                mask = np.zeros_like(roi_img, dtype=np.uint8)
-                mask[(enhanced >= threshold_min) & (enhanced <= threshold_max)] = 255
+                    # 第二步：双阈值分割（对预处理后的图像）
+                    mask = np.zeros_like(roi_img, dtype=np.uint8)
+                    mask[(enhanced >= threshold_min) & (enhanced <= threshold_max)] = 255
+
+                    logger.info("EllipticalMorph: Using preprocessing flow (GaussianBlur + CLAHE)")
+                    logger.info(f"  预处理参数: blur_kernel_size={blur_ksize}, clahe_clip_limit={clahe_clip}, clahe_tile_size={clahe_tile}")
+                else:
+                    # 直接对原始图像进行阈值分割（不预处理）
+                    mask = np.zeros_like(roi_img, dtype=np.uint8)
+                    mask[(roi_img >= threshold_min) & (roi_img <= threshold_max)] = 255
+
+                    logger.info("EllipticalMorph: Direct thresholding without preprocessing")
+                    logger.info(f"  阈值范围: [{threshold_min}, {threshold_max}]")
 
                 # 第三步：纯阈值分割，不进行任何形态学操作
-                logger.info("EllipticalMorph: Using regular preprocessing flow")
                 processed = mask.copy()
 
             # 第四步：连通域分析和筛选

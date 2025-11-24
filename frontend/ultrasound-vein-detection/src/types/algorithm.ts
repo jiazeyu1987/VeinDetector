@@ -41,6 +41,7 @@ export type EllipticalMorphParams = {
   blurKernelSize: number;
   claheClipLimit: number;
   claheTileGridSize: number;
+  preprocessingEnabled: boolean;
 };
 
 export type ConnectedComponentOptions = {

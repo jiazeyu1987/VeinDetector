@@ -134,6 +134,7 @@ export const MainLayout: React.FC = () => {
     blurKernelSize: 5,
     claheClipLimit: 2.0,
     claheTileGridSize: 8,
+    preprocessingEnabled: true,  // 默认启用预处理
   });
 
   const [connectedComponentOptions, setConnectedComponentOptions] = useState<ConnectedComponentOptions>({
@@ -266,6 +267,7 @@ export const MainLayout: React.FC = () => {
           blur_kernel_size: ellipticalMorphParams.blurKernelSize,
           clahe_clip_limit: ellipticalMorphParams.claheClipLimit,
           clahe_tile_grid_size: ellipticalMorphParams.claheTileGridSize,
+          preprocessing_enabled: ellipticalMorphParams.preprocessingEnabled ? 1 : 0,  // boolean转number
           elliptical_constraint_enabled: connectedComponentOptions.ellipticalConstraintEnabled ? 1 : 0,
           max_connected_component_enabled: connectedComponentOptions.maxConnectedComponentEnabled ? 1 : 0,
           roi_center_connected_component_enabled: connectedComponentOptions.roiCenterConnectedComponentEnabled ? 1 : 0,

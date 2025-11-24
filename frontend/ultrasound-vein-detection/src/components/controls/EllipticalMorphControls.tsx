@@ -26,7 +26,7 @@ export const EllipticalMorphControls: React.FC<EllipticalMorphControlsProps> = (
   onPointSelectModeChange,
   onSelectedPointChange,
 }) => {
-  const updateParam = (key: keyof EllipticalMorphParams, value: number) => {
+  const updateParam = (key: keyof EllipticalMorphParams, value: number | boolean) => {
     onParamsChange({
       ...params,
       [key]: value,
@@ -235,6 +235,32 @@ export const EllipticalMorphControls: React.FC<EllipticalMorphControlsProps> = (
                 )}
               </div>
             )}
+          </div>
+
+          {/* 预处理控制 */}
+          <div className="mt-4 p-3 bg-gray-800 rounded-lg">
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={params.preprocessingEnabled}
+                  onChange={(e) => updateParam('preprocessingEnabled', e.target.checked)}
+                  className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500 focus:ring-2"
+                />
+                <div>
+                  <span className="text-sm font-medium">🔧 图像预处理</span>
+                  <div className="text-xs text-gray-400">高斯模糊 + CLAHE增强</div>
+                </div>
+              </label>
+              <span className={`text-xs px-2 py-1 rounded ${params.preprocessingEnabled ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
+                {params.preprocessingEnabled ? '已启用' : '已禁用'}
+              </span>
+            </div>
+            <div className={`text-xs mt-1 ${params.preprocessingEnabled ? 'text-gray-400' : 'text-yellow-600'}`}>
+              {params.preprocessingEnabled
+                ? '对图像进行高斯模糊和CLAHE增强后再做阈值分割（传统模式）'
+                : '直接对原始图像做阈值分割，与灰度值精确对应（验证模式）'}
+            </div>
           </div>
         </div>
       </div>
