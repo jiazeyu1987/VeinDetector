@@ -164,50 +164,6 @@ export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
       </div>
       )}
 
-      <div className="mx-auto w-full max-w-[800px] px-2 space-y-3">
-        <div className="flex items-center justify-between mb-2 text-xs text-gray-200">
-          <span>时间轴</span>
-          <span>
-            帧 {currentFrame + 1} / {displayedTotalFrames}
-          </span>
-        </div>
-        <div className="flex items-center space-x-3">
-          <button
-            onClick={() =>
-              onCurrentFrameChange(Math.max(0, currentFrame - 1))
-            }
-            disabled={currentFrame === 0}
-            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
-          >
-            上一帧
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={Math.max(0, displayedTotalFrames - 1)}
-            value={currentFrame}
-            onChange={e => {
-              const value = parseInt(e.target.value, 10);
-              if (!Number.isNaN(value)) {
-                onCurrentFrameChange(value);
-              }
-            }}
-            className="flex-1 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
-          />
-          <button
-            onClick={() =>
-              onCurrentFrameChange(
-                Math.min(displayedTotalFrames - 1, currentFrame + 1),
-              )
-            }
-            disabled={currentFrame >= displayedTotalFrames - 1}
-            className="px-2 py-1 text-xs bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
-          >
-            下一帧
-          </button>
-        </div>
-
-        </div>
-    </div>
+      </div>
   );
 };

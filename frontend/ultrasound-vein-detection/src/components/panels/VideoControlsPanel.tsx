@@ -17,6 +17,9 @@ interface VideoControlsPanelProps {
   onToggleROIMode: () => void;
   onShrinkROI: () => void;
   onToggleROIBorder: () => void;
+  // Timeline controls
+  showTimeline: boolean;
+  onToggleTimeline: () => void;
 }
 
 export const VideoControlsPanel: React.FC<VideoControlsPanelProps> = ({
@@ -35,6 +38,9 @@ export const VideoControlsPanel: React.FC<VideoControlsPanelProps> = ({
   onToggleROIMode,
   onShrinkROI,
   onToggleROIBorder,
+  // Timeline controls
+  showTimeline,
+  onToggleTimeline,
 }) => {
   return (
     <div className="p-4 border-b border-gray-700">
@@ -94,6 +100,48 @@ export const VideoControlsPanel: React.FC<VideoControlsPanelProps> = ({
               >
                 {showROIBorder ? "👁️ 边框" : "👁️‍🗨️ 边框"}
               </button>
+            )}
+
+            {/* 时间轴控制 */}
+            <button
+              onClick={onToggleTimeline}
+              className="text-xs bg-gray-600 hover:bg-gray-700 px-2 py-1 rounded text-white border border-gray-500 transition-colors duration-150"
+              title={showTimeline ? "隐藏时间轴控制" : "显示时间轴控制"}
+            >
+              {showTimeline ? "⏱️ 时间轴" : "⏱️ 时间轴"}
+            </button>
+
+            {showTimeline && (
+              <div className="flex items-center space-x-2 text-xs">
+                <span className="text-gray-300">帧 {currentFrame + 1}/{displayedTotalFrames}</span>
+                <button
+                  onClick={() => onCurrentFrameChange(Math.max(0, currentFrame - 1))}
+                  disabled={currentFrame === 0}
+                  className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+                >
+                  上一帧
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, displayedTotalFrames - 1)}
+                  value={currentFrame}
+                  onChange={e => {
+                    const value = parseInt(e.target.value, 10);
+                    if (!Number.isNaN(value)) {
+                      onCurrentFrameChange(value);
+                    }
+                  }}
+                  className="w-24 h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
+                />
+                <button
+                  onClick={() => onCurrentFrameChange(Math.min(displayedTotalFrames - 1, currentFrame + 1))}
+                  disabled={currentFrame >= displayedTotalFrames - 1}
+                  className="px-2 py-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors"
+                >
+                  下一帧
+                </button>
+              </div>
             )}
 
             {showGrayscaleInfo && currentGrayscaleValue !== null && (

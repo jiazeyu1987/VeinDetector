@@ -65,6 +65,14 @@ export const MainLayout: React.FC = () => {
     confidenceThreshold: 0.5,
   });
 
+  // Timeline state
+  const [showTimeline, setShowTimeline] = useState(true);
+
+  // Timeline handlers
+  const handleToggleTimeline = () => {
+    setShowTimeline(!showTimeline);
+  };
+
   // Analysis state
   const [analysisState, setAnalysisState] = useState<AnalysisState>({
     isAnalyzing: false,
@@ -594,6 +602,8 @@ export const MainLayout: React.FC = () => {
               });
             }}
             onToggleROIBorder={() => setDisplayState(prev => ({ ...prev, showROIBorder: !prev.showROIBorder }))}
+            showTimeline={showTimeline}
+            onToggleTimeline={handleToggleTimeline}
           />
 
           <div className="flex-1 p-4 overflow-auto">
