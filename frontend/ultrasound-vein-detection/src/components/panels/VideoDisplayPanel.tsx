@@ -37,11 +37,6 @@ interface VideoDisplayPanelProps {
   onPanMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
   onPanMouseUp: () => void;
   onCurrentFrameChange: (frame: number) => void;
-  // 自动分析相关
-  autoAnalysisFrames: number;
-  isAutoAnalyzing: boolean;
-  onAutoAnalysisFramesChange: (frames: number) => void;
-  onStartAutoAnalysis: () => void;
 }
 
 export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
@@ -77,11 +72,6 @@ export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
   onPanMouseMove,
   onPanMouseUp,
   onCurrentFrameChange,
-  // 自动分析相关
-  autoAnalysisFrames,
-  isAutoAnalyzing,
-  onAutoAnalysisFramesChange,
-  onStartAutoAnalysis,
 }) => {
   return (
     <div className="space-y-4">
@@ -217,61 +207,7 @@ export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
           </button>
         </div>
 
-        {/* 自动分析控制 */}
-        <div className="bg-gray-800 rounded-lg p-3">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">🎯 自动批量分析</span>
-            <span className={`text-xs px-2 py-1 rounded ${isAutoAnalyzing ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300'}`}>
-              {isAutoAnalyzing ? '分析中...' : '就绪'}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-3 mb-2">
-            <div className="flex-1">
-              <label className="flex items-center justify-between text-xs mb-1">
-                <span>分析帧数</span>
-                <span className="text-gray-400">{autoAnalysisFrames}</span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                max={Math.max(1, displayedTotalFrames - currentFrame - 1)}
-                value={autoAnalysisFrames}
-                onChange={e => {
-                  const value = parseInt(e.target.value, 10);
-                  const maxValue = Math.max(1, displayedTotalFrames - currentFrame - 1);
-                  if (!Number.isNaN(value) && value > 0 && value <= maxValue) {
-                    onAutoAnalysisFramesChange(value);
-                  }
-                }}
-                className="w-full h-8 bg-gray-700 border border-gray-600 rounded text-xs px-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={isAutoAnalyzing}
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                从当前帧开始连续分析帧数 (1-{Math.max(1, displayedTotalFrames - currentFrame - 1)})
-              </div>
-            </div>
-
-            <button
-              onClick={onStartAutoAnalysis}
-              disabled={isAutoAnalyzing || !currentVideo || currentFrame >= displayedTotalFrames - 1}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm rounded-lg transition-colors duration-200 flex items-center space-x-2 h-8"
-              title={!currentVideo ? "请先上传视频" : currentFrame >= displayedTotalFrames - 1 ? "已到视频末尾" : isAutoAnalyzing ? "分析进行中" : "开始自动批量分析"}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              <span>{isAutoAnalyzing ? '分析中...' : '遵循指令'}</span>
-            </button>
-          </div>
-
-          <div className="text-xs text-gray-400">
-            <p>🔄 自动执行流程：ROI移至中心点 → 下一帧 → 开始分析 → ROI移至中心点 → 循环</p>
-            <p>🚫 空mask处理：如果某帧没有检测到连通域，ROI保持不变，继续下一帧</p>
-            <p>⚡ 提示：确保已设置好算法参数并启用自动分析功能</p>
-          </div>
         </div>
-      </div>
     </div>
   );
 };

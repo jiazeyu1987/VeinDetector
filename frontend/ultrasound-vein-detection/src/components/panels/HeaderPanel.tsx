@@ -8,18 +8,23 @@ interface HeaderPanelProps {
   isAnalyzing: boolean;
   analysisProgress: number;
   showSegmentationOverlay: boolean;
-  showCenterPoints: boolean;
   showSettingsPanel: boolean;
   error: string | null;
   onFileUpload: (file: File) => void;
   onModelChange: (model: string) => void;
   onStartAnalysis: () => void;
   onToggleSegmentationOverlay: () => void;
-  onToggleCenterPoints: () => void;
   onToggleSettingsPanel: () => void;
   onClearError: () => void;
   testMode: boolean;
   onToggleTestMode: () => void;
+  // 自动分析相关
+  currentFrame: number;
+  displayedTotalFrames: number;
+  autoAnalysisFrames: number;
+  isAutoAnalyzing: boolean;
+  onAutoAnalysisFramesChange: (frames: number) => void;
+  onStartAutoAnalysis: () => void;
 }
 
 export const HeaderPanel: React.FC<HeaderPanelProps> = ({
@@ -28,18 +33,23 @@ export const HeaderPanel: React.FC<HeaderPanelProps> = ({
   isAnalyzing,
   analysisProgress,
   showSegmentationOverlay,
-  showCenterPoints,
   showSettingsPanel,
   error,
   onFileUpload,
   onModelChange,
   onStartAnalysis,
   onToggleSegmentationOverlay,
-  onToggleCenterPoints,
   onToggleSettingsPanel,
   onClearError,
   testMode,
   onToggleTestMode,
+  // 自动分析相关
+  currentFrame,
+  displayedTotalFrames,
+  autoAnalysisFrames,
+  isAutoAnalyzing,
+  onAutoAnalysisFramesChange,
+  onStartAutoAnalysis,
 }) => {
   return (
     <div className="bg-gray-800 border-b border-gray-700 p-4">
@@ -109,13 +119,39 @@ export const HeaderPanel: React.FC<HeaderPanelProps> = ({
           >
             <span>{showSegmentationOverlay ? '隐藏分割结果' : '显示分割结果'}</span>
           </button>
-          <button
-            onClick={onToggleCenterPoints}
-            disabled={!showCenterPoints}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded flex items-center space-x-2 transition-colors"
-          >
-            <span>{showCenterPoints ? '隐藏中心点' : '显示中心点'}</span>
-          </button>
+          {/* 自动分析控制 */}
+          <div className="flex items-center space-x-2 text-sm text-gray-200">
+            <label className="flex items-center justify-between">
+              <span>帧数:</span>
+              <input
+                type="number"
+                min="1"
+                max={Math.max(1, displayedTotalFrames - currentFrame - 1)}
+                value={autoAnalysisFrames}
+                onChange={e => {
+                  const value = parseInt(e.target.value, 10);
+                  const maxValue = Math.max(1, displayedTotalFrames - currentFrame - 1);
+                  if (!Number.isNaN(value) && value > 0 && value <= maxValue) {
+                    onAutoAnalysisFramesChange(value);
+                  }
+                }}
+                className="w-16 h-8 bg-gray-700 border border-gray-600 rounded text-xs px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-500 ml-2"
+                disabled={isAutoAnalyzing}
+                title={`从当前帧开始连续分析帧数 (1-${Math.max(1, displayedTotalFrames - currentFrame - 1)})`}
+              />
+            </label>
+            <button
+              onClick={onStartAutoAnalysis}
+              disabled={isAutoAnalyzing || !currentVideo || currentFrame >= displayedTotalFrames - 1}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm rounded transition-colors duration-200 flex items-center space-x-1"
+              title={!currentVideo ? "请先上传视频" : currentFrame >= displayedTotalFrames - 1 ? "已到视频末尾" : isAutoAnalyzing ? "分析进行中" : "开始自动批量分析"}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>{isAutoAnalyzing ? '分析中' : '遵循指令'}</span>
+            </button>
+          </div>
           <button
             onClick={onToggleSettingsPanel}
             className={`p-2 rounded transition-colors ${

@@ -544,7 +544,6 @@ export const MainLayout: React.FC = () => {
           isAnalyzing={analysisState.isAnalyzing}
           analysisProgress={analysisState.analysisProgress}
           showSegmentationOverlay={displayState.showSegmentationOverlay}
-          showCenterPoints={displayState.showCenterPoints}
           showSettingsPanel={displayState.showSettingsPanel}
           error={error}
           onFileUpload={handleFileUpload}
@@ -552,11 +551,17 @@ export const MainLayout: React.FC = () => {
           // 注意：这里包一层，避免 React 把点击事件作为参数传给 startAnalysis
           onStartAnalysis={() => { void startAnalysis(); }}
         onToggleSegmentationOverlay={() => setDisplayState(prev => ({ ...prev, showSegmentationOverlay: !prev.showSegmentationOverlay }))}
-        onToggleCenterPoints={() => setDisplayState(prev => ({ ...prev, showCenterPoints: !prev.showCenterPoints }))}
         onToggleSettingsPanel={() => setDisplayState(prev => ({ ...prev, showSettingsPanel: !prev.showSettingsPanel }))}
         onClearError={() => setError(null)}
         testMode={testMode}
         onToggleTestMode={() => setTestMode(!testMode)}
+        // 自动分析相关
+        currentFrame={currentFrame}
+        displayedTotalFrames={displayedTotalFrames}
+        autoAnalysisFrames={autoAnalysisFrames}
+        isAutoAnalyzing={isAutoAnalyzing}
+        onAutoAnalysisFramesChange={setAutoAnalysisFrames}
+        onStartAutoAnalysis={() => { void startAutoAnalysis(); }}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -631,11 +636,6 @@ export const MainLayout: React.FC = () => {
               onPanMouseMove={videoControls.handlePanMouseMove}
               onPanMouseUp={videoControls.handlePanMouseUp}
               onCurrentFrameChange={setCurrentFrame}
-              // 自动分析相关
-              autoAnalysisFrames={autoAnalysisFrames}
-              isAutoAnalyzing={isAutoAnalyzing}
-              onAutoAnalysisFramesChange={setAutoAnalysisFrames}
-              onStartAutoAnalysis={startAutoAnalysis}
             />
           </div>
         </div>
