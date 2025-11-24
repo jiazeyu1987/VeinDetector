@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grayscale Debug</title>
+</head>
+<body>
+    <h1>Grayscale Debug Page</h1>
+    <p>Visit the main app at http://localhost:5183 and check if:</p>
+    <ol>
+        <li>The "显示灰度信息" checkbox is checked in the right panel</li>
+        <li>Mouse over the video/image shows grayscale values</li>
+        <li>Check browser console for JavaScript errors (F12)</li>
+    </ol>
+
+    <h2>How to Enable Grayscale Display:</h2>
+    <ol>
+        <li>Upload a video file</li>
+        <li>Select a ROI region</li>
+        <li>In the right panel, find "灰度值分析" section</li>
+        <li>Check the "显示灰度信息" checkbox</li>
+        <li>Move mouse over the video to see grayscale values</li>
+    </ol>
+
+    <h2>Expected Behavior:</h2>
+    <ul>
+        <li>Grayscale value should appear next to "ROI Selected" button</li>
+        <li>Should show format: "灰度: XXX/255"</li>
+        <li>Value should update as mouse moves</li>
+    </ul>
+
+    <script>
+        console.log('Grayscale debug page loaded');
+        console.log('Main app should be available at http://localhost:5183');
+    </script>
+</body>
+</html>

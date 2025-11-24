@@ -1,4 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { ConnectedComponentCenter } from '../types/algorithm';
+import { ROI } from '../api/types';
 
 interface VideoPlayerProps {
   videoUrl?: string;
@@ -14,6 +16,8 @@ interface VideoPlayerProps {
   onMouseMove?: (e: React.MouseEvent<HTMLCanvasElement>, grayscaleValue: number, x: number, y: number) => void;
   onMouseLeave?: () => void;
   showGrayscale?: boolean;
+  connectedComponentCenter?: ConnectedComponentCenter | null; // 新增：连通域中心点
+  currentROI?: ROI | null; // 新增：当前ROI信息
 }
 
 export const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -30,6 +34,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
   onMouseMove,
   onMouseLeave,
   showGrayscale = false,
+  connectedComponentCenter, // 新增
+  currentROI, // 新增
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -188,6 +194,65 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
             const offsetY = (height - drawHeight) / 2;
 
             ctx.drawImage(video, offsetX, offsetY, drawWidth, drawHeight);
+
+            // 绘制连通域中心点标记
+            if (connectedComponentCenter) {
+              // 关键理解：连通域中心点是基于800x600分析画布的坐标
+              // 但视频在画布上可能被缩放并居中绘制，需要考虑视频的显示变换
+              console.log('🔍 连通域中心点绘制分析（完整修复版）:');
+              console.log('='.repeat(60));
+              console.log('📊 坐标系统分析:');
+              console.log(`  画布尺寸: ${width} x ${height}`);
+              console.log(`  视频原始尺寸: ${video.videoWidth} x ${video.videoHeight}`);
+              console.log(`  视频显示尺寸: ${drawWidth} x ${drawHeight}`);
+              console.log(`  视频偏移: (${offsetX}, ${offsetY})`);
+
+              // 将ROI相对坐标转换为画布绝对坐标（基于800x600分析画布）
+              let analysisCanvasX, analysisCanvasY;
+              if (currentROI) {
+                analysisCanvasX = currentROI.x + connectedComponentCenter.x;
+                analysisCanvasY = currentROI.y + connectedComponentCenter.y;
+                console.log(`  ROI左上角坐标: (${currentROI.x}, ${currentROI.y})`);
+                console.log(`  ROI大小: ${currentROI.width} x ${currentROI.height}`);
+                console.log(`  分析画布坐标: ROI相对(${connectedComponentCenter.x}, ${connectedComponentCenter.y}) -> 画布绝对(${analysisCanvasX}, ${analysisCanvasY})`);
+              } else {
+                analysisCanvasX = connectedComponentCenter.x;
+                analysisCanvasY = connectedComponentCenter.y;
+                console.log(`  ⚠️ 未提供ROI信息，假设坐标为画布绝对坐标(${analysisCanvasX}, ${analysisCanvasY})`);
+              }
+
+              // 现在，需要将分析画布坐标映射到视频显示坐标
+              // 假设分析画布就是当前画布(800x600)，所以直接使用分析画布坐标
+              const canvasX = analysisCanvasX;
+              const canvasY = analysisCanvasY;
+
+              console.log('📐 坐标映射:');
+              console.log(`  分析画布坐标 -> 视频显示坐标: (${analysisCanvasX}, ${analysisCanvasY}) -> (${canvasX}, ${canvasY})`);
+
+              // 验证坐标是否在画布范围内
+              const isValid = canvasX >= 0 && canvasX <= width && canvasY >= 0 && canvasY <= height;
+              console.log('📌 最终验证:');
+              console.log(`  画布坐标范围: x=[0, ${width}], y=[0, ${height}]`);
+              console.log(`  最终绘制坐标: (${canvasX}, ${canvasY})`);
+              console.log(`  坐标是否有效: ${isValid ? '是' : '否'}`);
+              console.log('='.repeat(60));
+
+              // 打印绘制信息
+              console.log('🎯 准备绘制连通域中心点:', {
+                ROI相对坐标: `(${connectedComponentCenter.x}, ${connectedComponentCenter.y})`,
+                分析画布坐标: `(${analysisCanvasX}, ${analysisCanvasY})`,
+                视频显示坐标: `(${canvasX}, ${canvasY})`,
+                面积: connectedComponentCenter.area,
+                ROI信息: currentROI ? `(${currentROI.x}, ${currentROI.y}, ${currentROI.width}x${currentROI.height})` : '无',
+                坐标有效: isValid
+              });
+
+              // 绘制绿色小圆点，半径2px
+              ctx.beginPath();
+              ctx.arc(canvasX, canvasY, 2, 0, 2 * Math.PI);
+              ctx.fillStyle = 'rgba(0, 255, 0, 0.9)'; // 绿色，高对比度
+              ctx.fill();
+            }
           }
         }
       }
@@ -195,7 +260,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({
     };
     animationFrameId = requestAnimationFrame(drawFrame);
     return () => cancelAnimationFrame(animationFrameId);
-  }, [width, height, videoUrl]);
+  }, [width, height, videoUrl, connectedComponentCenter, currentROI]);
 
   return (
     <div

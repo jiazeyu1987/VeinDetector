@@ -1,4 +1,5 @@
 // API 类型定义
+import { ConnectedComponentCenter } from '../types/algorithm';
 export interface VideoInfo {
   id: string;
   name: string;
@@ -73,4 +74,5 @@ export interface SamusSegmentationResponse {
   width: number;
   height: number;
   mask: number[][];
+  connected_component_center?: ConnectedComponentCenter | null;
 }

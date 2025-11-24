@@ -95,6 +95,14 @@ export type GrayscaleInfo = {
   testMode: boolean;
 };
 
+export type ConnectedComponentCenter = {
+  x: number;
+  y: number;
+  area: number;
+  label: number;
+  confidence: number;
+};
+
 export type ROIControlState = {
   isROIMode: boolean;
   isPointSelectionMode: boolean;

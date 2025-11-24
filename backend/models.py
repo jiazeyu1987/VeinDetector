@@ -73,6 +73,15 @@ class CenterPoint(BaseModel):
     in_mask: bool = Field(default=False, description="该点是否在分割mask内")
 
 
+class ConnectedComponentCenter(BaseModel):
+    """连通域中心点信息"""
+    x: int = Field(description="连通域中心点的X坐标（相对于ROI左上角）")
+    y: int = Field(description="连通域中心点的Y坐标（相对于ROI左上角）")
+    area: int = Field(description="连通域的面积（像素数）")
+    label: int = Field(description="连通域的标签ID")
+    confidence: float = Field(default=1.0, description="连通域的置信度")
+
+
 class SamusMaskResponse(BaseModel):
     """静脉分割结果（简化为 0/1 mask）"""
 
@@ -80,6 +89,7 @@ class SamusMaskResponse(BaseModel):
     height: int = Field(description="图像高度（像素）")
     mask: List[List[int]] = Field(description="二维 0/1 掩码，与图像同宽高")
     center_points: Optional[List[CenterPoint]] = Field(default=None, description="ROI中心采样点信息")
+    connected_component_center: Optional[ConnectedComponentCenter] = Field(default=None, description="目标连通域的中心点信息")
     roi_center_connected: bool = Field(default=False, description="是否启用了ROI中心点连通域")
     max_connected_component: bool = Field(default=False, description="是否启用了最大连通域")
     processing_info: Optional[Dict[str, Any]] = Field(default=None, description="处理信息")

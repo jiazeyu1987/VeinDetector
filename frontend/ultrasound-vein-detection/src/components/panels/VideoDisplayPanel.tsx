@@ -2,6 +2,7 @@ import React from 'react';
 import { VideoPlayer } from '../VideoPlayer';
 import { ROIEditor } from '../ROIEditor';
 import { VideoInfo, ROI } from '../../api/types';
+import { ConnectedComponentCenter } from '../../types/algorithm';
 
 interface VideoDisplayPanelProps {
   currentVideo: VideoInfo | null;
@@ -21,6 +22,7 @@ interface VideoDisplayPanelProps {
   selectedPoint: {x: number, y: number} | null;
   enablePointSelection: boolean;
   isPointSelectionMode: boolean;
+  connectedComponentCenter?: ConnectedComponentCenter | null; // 新增：连通域中心点
   onFrameChange: (frame: number) => void;
   onTimeUpdate: () => void;
   onCanvasRef: (canvas: HTMLCanvasElement | null) => void;
@@ -55,6 +57,7 @@ export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
   selectedPoint,
   enablePointSelection,
   isPointSelectionMode,
+  connectedComponentCenter, // 新增
   onFrameChange,
   onTimeUpdate,
   onCanvasRef,
@@ -112,6 +115,8 @@ export const VideoDisplayPanel: React.FC<VideoDisplayPanelProps> = ({
           onMouseMove={showGrayscale ? onMouseMove : undefined}
           onMouseLeave={showGrayscale ? onMouseLeave : undefined}
           showGrayscale={showGrayscale}
+          connectedComponentCenter={connectedComponentCenter}
+          currentROI={currentROI}
         />
 
         <div

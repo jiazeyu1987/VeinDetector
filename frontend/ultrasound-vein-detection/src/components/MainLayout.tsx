@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VideoInfo, ROI, VeinDetectionResult } from '../api/types';
 import { apiClient, mockApi } from '../api/client';
+import { ConnectedComponentCenter } from '../types/algorithm';
 
 // Import extracted components
 import { HeaderPanel } from './panels/HeaderPanel';
@@ -84,6 +85,9 @@ export const MainLayout: React.FC = () => {
     isPointSelectionMode: false,
     selectedPoint: null,
   });
+
+  // Connected component center state
+  const [connectedComponentCenter, setConnectedComponentCenter] = useState<ConnectedComponentCenter | null>(null);
 
   // Algorithm parameters
   const [enhancedCVParams, setEnhancedCVParams] = useState<EnhancedCVParams>({
@@ -203,6 +207,9 @@ export const MainLayout: React.FC = () => {
       setAnalysisState(prev => ({ ...prev, isAnalyzing: true, analysisProgress: 0 }));
       setError(null);
 
+      // 清除之前的连通域中心点
+      console.log('🗑️ 开始新分析，清除之前的连通域中心点');
+      setConnectedComponentCenter(null);
       setSegmentationMask(null);
       setCurrentDetection(undefined);
       setDetectionResults([]);
@@ -281,6 +288,43 @@ export const MainLayout: React.FC = () => {
           setAnalysisCenterPoints((response.data as any).centerPoints);
           setDisplayState(prev => ({ ...prev, showCenterPoints: true }));
         }
+
+        // 处理连通域中心点，自动移动ROI
+        if (response.data.connected_component_center && currentROI) {
+          const center = response.data.connected_component_center;
+          console.log('🎯 检测到连通域中心点:', center);
+          console.log('📍 当前ROI:', currentROI);
+
+          // 保存连通域中心点状态，用于绘制
+          console.log('🔄 保存连通域中心点到前端状态:', {
+            中心点坐标: `(${center.x}, ${center.y})`,
+            面积: center.area,
+            标签: center.label,
+            置信度: center.confidence
+          });
+          setConnectedComponentCenter(center);
+
+          // 计算连通域中心的画布绝对坐标（仅用于日志记录和显示）
+          const absCenterX = currentROI.x + center.x;
+          const absCenterY = currentROI.y + center.y;
+
+          console.log('🔄 连通域分析结果（ROI不移动）:');
+          console.log('  连通域中心点 (ROI相对坐标):', `(${center.x}, ${center.y})`);
+          console.log('  连通域中心点 (画布绝对坐标):', `(${absCenterX}, ${absCenterY})`);
+          console.log('  当前ROI位置:', `(${currentROI.x}, ${currentROI.y})`);
+          console.log('  当前ROI大小:', `${currentROI.width} x ${currentROI.height}`);
+          console.log('  当前ROI中心点:', `(${currentROI.x + currentROI.width/2}, ${currentROI.y + currentROI.height/2})`);
+          console.log('  连通域面积:', `${center.area}px²`);
+          console.log('📊 ROI保持不变，仅在界面上显示连通域中心点标记');
+
+          // 不显示提示消息，直接在界面上显示中心点
+          console.log(`✓ 检测到连通域中心点 (面积: ${center.area}px²)，已在界面上标记`);
+        } else {
+          // 如果没有连通域中心点，清除现有状态
+          console.log('🗑️ 清除连通域中心点状态');
+          setConnectedComponentCenter(null);
+        }
+
         setAnalysisState(prev => ({ ...prev, isAnalyzing: false, analysisProgress: 100 }));
       } else {
         setError(response.error || response.message || '分析启动失败');
@@ -458,6 +502,7 @@ export const MainLayout: React.FC = () => {
               selectedPoint={roiControlState.selectedPoint}
               enablePointSelection={connectedComponentOptions.selectedPointConnectedComponentEnabled || roiControlState.isPointSelectionMode}
               isPointSelectionMode={roiControlState.isPointSelectionMode}
+              connectedComponentCenter={connectedComponentCenter}
               onFrameChange={setCurrentFrame}
               onTimeUpdate={() => {}}
               onCanvasRef={canvas => { frameCanvasRef.current = canvas; }}

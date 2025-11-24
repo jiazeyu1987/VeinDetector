@@ -23,7 +23,7 @@ The system uses a modern microservices architecture with comprehensive testing i
 - **Performance**: Numba JIT compilation for algorithm optimization
 
 ### Infrastructure
-- **Development**: 8 services (PostgreSQL, Redis, MinIO, API, Frontend, Video-service, Jupyter, MailHog)
+- **Development**: 7 services (PostgreSQL, Redis, MinIO, API, Frontend, Jupyter, MailHog)
 - **Production**: 16 services with monitoring stack (Prometheus, Grafana, Elasticsearch, Kibana)
 
 ## Development Commands
@@ -42,9 +42,11 @@ npm run test:unit              # Unit tests only
 npm run test:integration       # Integration tests
 npm run test:e2e              # End-to-end tests
 npm run test:performance      # Performance tests
+npm run test:benchmark        # Performance benchmarking
 npm run test:memory           # Memory usage analysis
 npm run test:cpu              # CPU usage analysis
 npm run test:coverage         # Test coverage report
+npm run test:watch            # Jest watch mode for continuous testing
 
 # Docker management
 npm run docker:build           # Build Docker images
@@ -53,12 +55,28 @@ npm run docker:down           # Stop Docker containers
 npm run docker:logs           # View Docker logs
 
 # Dependencies
-npm run install:all            # Install all dependencies (root, frontend, backend, video-service)
+npm run install:all            # Install all dependencies (root, frontend, backend)
 npm run clean                  # Clean all node_modules
+npm run clean:cache            # Clean Jest cache and coverage reports
+npm run clean:logs             # Clean log files
+npm run clean:temp             # Clean temporary files and uploads
+
+# Code quality and security
+npm run lint:fix               # Auto-fix ESLint issues
+npm run format                 # Format code with Prettier
+npm run format:check           # Check code formatting
+npm run type-check             # TypeScript type checking
+npm run security               # Run security audit (npm audit + snyk)
 
 # Deployment and monitoring
 npm run deploy                 # Production deployment via scripts/deploy.sh
+npm run deploy:check           # Check deployment environment
+npm run deploy:monitor         # Monitor deployed services
 npm run monitor                # System monitoring via scripts/monitor.js
+
+# Documentation
+npm run doc:generate           # Generate JSDoc documentation
+npm run doc:serve              # Generate and serve documentation
 ```
 
 ### Frontend Development
@@ -94,11 +112,14 @@ black .                                     # Format code
 flake8 .                                    # Lint code
 mypy .                                      # Type checking
 isort .                                     # Sort imports
+
+# Quick development scripts
+./start.sh                                  # Quick start (sets up venv, installs deps, starts server)
 ```
 
-### Docker Development
+##### Docker Development
 ```bash
-# Development environment (8 services: postgres, redis, minio, api, web, video-service, mailhog, jupyter)
+# Development environment (7 services: postgres, redis, minio, api, web, mailhog, jupyter)
 docker-compose -f docker-compose.dev.yml up -d      # Start all services
 docker-compose -f docker-compose.dev.yml down       # Stop all services
 docker-compose -f docker-compose.dev.yml logs -f    # View logs
@@ -180,6 +201,11 @@ The system supports real-time parameter adjustment for multiple vein detection a
 - `backend/detection_config.yaml` - Algorithm-specific configuration (model selection, deep learning hyperparameters, image processing pipelines)
 - `backend/requirements.txt` - Comprehensive Python dependencies with specific versions
 
+### Additional Configuration
+- `config/cors.config.js` - CORS configuration for cross-origin requests
+- `config/test/` - Test configuration files
+- `docker-compose.dev.yml` & `docker-compose.prod.yml` - Docker environment configurations
+
 ### Environment Variables
 ```bash
 # Frontend
@@ -198,10 +224,10 @@ JWT_SECRET=your-jwt-secret
 ## Testing Infrastructure
 
 ### Comprehensive Test Framework
-- **Unit Tests**: `tests/unit/` - Individual component testing (videoUpload.test.js, veinDetection.test.js)
-- **Integration Tests**: `tests/integration/` - Cross-component integration testing (systemIntegration.test.js)
-- **E2E Tests**: `tests/e2e/` - Full application flow testing (e2e-test-runner.js)
-- **Performance Tests**: `tests/performance/` - Load and stress testing (performanceOptimization.test.js)
+- **Unit Tests**: `tests/unit/` - Individual component testing
+- **Integration Tests**: `tests/integration/` - Cross-component integration testing
+- **E2E Tests**: `tests/e2e/` - Full application flow testing with Puppeteer
+- **Performance Tests**: `tests/performance/` - Load and stress testing with CPU/memory profiling
 
 ### Test Execution Commands
 ```bash
@@ -256,8 +282,9 @@ npm run test:cpu                          # CPU usage analysis
 ### Development Environment Setup
 - **Backend Quick Start**: `./start.sh` script handles virtual environment creation, dependency installation, and server startup
 - **Frontend Development**: pnpm with Vite for fast hot-reload development experience
-- **Docker Development**: 8-service stack with live-reload volumes for both frontend and backend
+- **Docker Development**: 7-service stack with live-reload volumes for both frontend and backend
 - **Health Monitoring**: Built-in health checks and monitoring scripts for all services
+- **Git Hooks**: Pre-commit lint-staged and pre-push test automation via Husky
 
 ### Security and Production Considerations
 - **File Validation**: Strict video file type and size validation (500MB limit)
@@ -267,7 +294,18 @@ npm run test:cpu                          # CPU usage analysis
 - **Resource Management**: Automated memory cleanup and garbage collection for long-running processes
 
 ## Documentation References
-- **API Documentation**: Available at `http://localhost:8000/docs` (Swagger UI) when backend is running
+
+### API Documentation
+- **Interactive API Docs**: Available at `http://localhost:8000/docs` (Swagger UI) when backend is running
+- **Detailed API References**: Individual endpoint documentation in `docs/api_*.md` files:
+  - `docs/api_analysis_samus.md` - SAMUS analysis endpoint with implementation details
+  - `docs/api_upload_video.md` - Video upload and processing
+  - `docs/api_processing_status.md` - Real-time progress monitoring
+  - `docs/api_detection_results.md` - Results retrieval and vein regions
+  - And other comprehensive API endpoint documentation
+
+### Project Documentation
 - **Development Scripts**: Comprehensive usage in `scripts/deploy.sh help` and `scripts/dev-*.sh`
-- **Backend Deployment**: Detailed instructions in `backend/DEPLOYMENT.md`
+- **Backend Deployment**: Detailed instructions in `backend/README.md`
 - **Frontend Documentation**: Complete project documentation in `frontend/ultrasound-vein-detection/PROJECT_SUMMARY.md`
+- **Project Roadmap**: Implementation phases and feature planning in `todolist/ROADMAP.md`

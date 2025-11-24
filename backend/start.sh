@@ -18,7 +18,13 @@ fi
 
 # 激活虚拟环境
 echo "🔄 激活虚拟环境..."
-source venv/bin/activate
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
+    # Windows环境
+    source venv/Scripts/activate
+else
+    # Linux/Unix环境
+    source venv/bin/activate
+fi
 
 # 安装依赖
 echo "📥 安装依赖包..."

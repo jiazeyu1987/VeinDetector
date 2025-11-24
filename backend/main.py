@@ -13,6 +13,7 @@ from datetime import datetime
 import uuid
 import asyncio
 import numpy as np
+import cv2
 from models import (
     VideoUploadResponse,
     ProcessingProgressResponse,
@@ -25,6 +26,7 @@ from models import (
     SamusAnalysisRequest,
     SamusMaskResponse,
     CenterPoint,
+    ConnectedComponentCenter,
 )
 from video_processor import VideoProcessor
 from vein_detector import VeinDetector, VeinRegion
@@ -450,6 +452,136 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
 
     height, width = mask.shape
 
+  # 计算目标连通域的中心点
+    connected_component_center = None
+    if request.parameters and (request.parameters.get("max_connected_component_enabled", 0) == 1 or
+                               request.parameters.get("roi_center_connected_component_enabled", 0) == 1 or
+                               request.parameters.get("selected_point_connected_component_enabled", 0) == 1):
+
+        # 获取ROI信息
+        roi_x = int(request.roi.x)
+        roi_y = int(request.roi.y)
+        roi_w = int(request.roi.width)
+        roi_h = int(request.roi.height)
+
+        # 打印关键坐标信息
+        logger.info("=" * 60)
+        logger.info("🔍 坐标系统调试信息")
+        logger.info("=" * 60)
+        logger.info(f"📐 图像尺寸: {width} x {height}")
+        logger.info(f"📐 掩码尺寸: {mask.shape}")
+        logger.info(f"📐 ROI左上角坐标: ({roi_x}, {roi_y})")
+        logger.info(f"📐 ROI右下角坐标: ({roi_x + roi_w}, {roi_y + roi_h})")
+        logger.info(f"📐 ROI中心点坐标: ({roi_x + roi_w // 2}, {roi_y + roi_h // 2})")
+        logger.info(f"📐 ROI大小: {roi_w} x {roi_h}")
+
+        # 添加坐标原点分析
+        logger.info("🌍 坐标系统分析:")
+        logger.info(f"  图像坐标范围: x=[0, {width-1}], y=[0, {height-1}]")
+        logger.info(f"  ROI坐标范围:   x=[{roi_x}, {roi_x + roi_w}], y=[{roi_y}, {roi_y + roi_h}]")
+
+        # 检查ROI是否超出图像边界
+        roi_out_of_bounds = (roi_x < 0 or roi_y < 0 or
+                           roi_x + roi_w > width or roi_y + roi_h > height)
+        logger.info(f"  ROI是否超出图像边界: {'是' if roi_out_of_bounds else '否'}")
+
+        if roi_out_of_bounds:
+            logger.warning(f"⚠️ ROI超出图像范围！")
+            logger.warning(f"   ROI: x=[{roi_x}, {roi_x + roi_w}], y=[{roi_y}, {roi_y + roi_h}]")
+            logger.warning(f"   图像: x=[0, {width-1}], y=[0, {height-1}]")
+
+        # 显示掩码中非零像素的坐标范围
+        y_coords, x_coords = np.where(mask > 0)
+        if len(x_coords) > 0:
+            mask_x_min, mask_x_max = x_coords.min(), x_coords.max()
+            mask_y_min, mask_y_max = y_coords.min(), y_coords.max()
+            logger.info(f"📍 掩码中非零像素坐标范围: x=[{mask_x_min}, {mask_x_max}], y=[{mask_y_min}, {mask_y_max}]")
+
+            # 检查掩码坐标是否在ROI内
+            mask_in_roi = (roi_x <= mask_x_min and mask_x_max <= roi_x + roi_w and
+                          roi_y <= mask_y_min and mask_y_max <= roi_y + roi_h)
+            logger.info(f"📍 掩码坐标是否完全在ROI内: {'是' if mask_in_roi else '否'}")
+
+        if mask.sum() > 0:  # 确保有白色的像素
+            # 在完整图像掩码上进行连通域分析
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+                mask.astype(np.uint8), connectivity=4, ltype=cv2.CV_32S
+            )
+
+            logger.info(f"🔢 连通域分析结果: 发现{num_labels}个标签（包括背景），{num_labels-1}个连通区域")
+
+            # 显示所有连通域的详细信息
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                centroid = centroids[i]
+                logger.info(f"  连通域{i}: 面积={area}, 中心点=({centroid[0]:.1f}, {centroid[1]:.1f})")
+
+            # 找到面积最大的连通域作为目标连通域
+            if num_labels > 1:
+                max_area_idx = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+                target_area = stats[max_area_idx, cv2.CC_STAT_AREA]
+                target_centroid = centroids[max_area_idx]
+
+                logger.info(f"🎯 选中的连通域 {max_area_idx}: 面积={target_area}, 中心点=({target_centroid[0]:.1f}, {target_centroid[1]:.1f})")
+
+                # 获取连通域中的随机10个点坐标
+                # 找到所有属于目标连通域的像素坐标
+                component_mask = (labels == max_area_idx)
+                y_coords, x_coords = np.where(component_mask)
+                num_points = len(x_coords)
+
+                logger.info(f"📍 连通域包含 {num_points} 个像素点")
+
+                if num_points > 0:
+                    # 随机选择10个点
+                    if num_points <= 10:
+                        selected_indices = np.arange(num_points)
+                    else:
+                        selected_indices = np.random.choice(num_points, 10, replace=False)
+
+                    logger.info(f"📍 连通域随机10个点的坐标:")
+                    for i, idx in enumerate(selected_indices):
+                        x, y = int(x_coords[idx]), int(y_coords[idx])
+                        # 检查点是否在ROI内
+                        in_roi = (roi_x <= x <= roi_x + roi_w and roi_y <= y <= roi_y + roi_h)
+                        logger.info(f"  点{i+1}: ({x}, {y}) {'✓在ROI内' if in_roi else '✗不在ROI内'}")
+
+                    # 分析坐标分布
+                    x_min, x_max = x_coords.min(), x_coords.max()
+                    y_min, y_max = y_coords.min(), y_coords.max()
+                    logger.info(f"📍 连通域坐标范围: x=[{x_min}, {x_max}], y=[{y_min}, {y_max}]")
+                    logger.info(f"📍 ROI坐标范围:    x=[{roi_x}, {roi_x + roi_w}], y=[{roi_y}, {roi_y + roi_h}]")
+
+                    # 验证中心点是否在ROI内
+                    center_x, center_y = int(target_centroid[0]), int(target_centroid[1])
+                    center_in_roi = (roi_x <= center_x <= roi_x + roi_w and roi_y <= center_y <= roi_y + roi_h)
+                    # 验证坐标系统：打印坐标原点信息
+                logger.info("🌍 坐标系统验证:")
+                logger.info(f"  图像坐标原点 (0, 0): 左上角")
+                logger.info(f"  连通域中心点 ({center_x}, {center_y}): 距离左边{center_x}px, 距离上边{center_y}px")
+                logger.info(f"  ROI左上角 ({roi_x}, {roi_y}): 距离左边{roi_x}px, 距离上边{roi_y}px")
+                logger.info(f"  连通域相对ROI位置: ({center_x - roi_x}, {center_y - roi_y})")
+                logger.info(f"🎯 连通域中心点 ({center_x}, {center_y}) {'✓在ROI内' if center_in_roi else '✗不在ROI内'}")
+
+                # 使用连通域中心点（转换为相对于ROI的坐标）
+                connected_component_center = ConnectedComponentCenter(
+                    x=center_x - roi_x,  # 转换为相对于ROI的坐标
+                    y=center_y - roi_y,  # 转换为相对于ROI的坐标
+                    area=int(target_area),
+                    label=int(max_area_idx),
+                    confidence=1.0
+                )
+
+                logger.info(f"🔗 返回给前端的连通域中心点: ({connected_component_center.x}, {connected_component_center.y})")
+            else:
+                logger.warning("⚠️ 连通域为空，没有像素点")
+        else:
+            logger.warning("⚠️ 没有找到连通域")
+    else:
+        logger.warning("⚠️ 掩码中没有白色像素")
+
+        logger.info("=" * 60)
+
     # 生成ROI中心采样点信息
     center_points = []
     sampling_points = [
@@ -490,6 +622,7 @@ async def analyze_frame_with_samus(request: SamusAnalysisRequest):
         height=height,
         mask=mask.astype(int).tolist(),
         center_points=[cp.dict() for cp in center_points],
+        connected_component_center=connected_component_center.dict() if connected_component_center else None,
         roi_center_connected=roi_center_connected,
         max_connected_component=max_connected_component,
         processing_info=processing_info
