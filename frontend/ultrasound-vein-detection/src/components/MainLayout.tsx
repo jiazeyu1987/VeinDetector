@@ -33,6 +33,8 @@ export const MainLayout: React.FC = () => {
   const [currentVideo, setCurrentVideo] = useState<VideoInfo | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [currentROI, setCurrentROI] = useState<ROI | null>(null);
+  const [autoAnalysisFrames, setAutoAnalysisFrames] = useState(10);  // 默认10帧
+  const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
   const [detectionResults, setDetectionResults] = useState<VeinDetectionResult[]>([]);
   const [currentDetection, setCurrentDetection] = useState<VeinDetectionResult | undefined>();
   const [segmentationMask, setSegmentationMask] = useState<number[][] | null>(null);
@@ -139,8 +141,8 @@ export const MainLayout: React.FC = () => {
 
   const [connectedComponentOptions, setConnectedComponentOptions] = useState<ConnectedComponentOptions>({
     ellipticalConstraintEnabled: false,
-    maxConnectedComponentEnabled: false,
-    roiCenterConnectedComponentEnabled: true,
+    maxConnectedComponentEnabled: true,  // 启用最大连通区域检测以获得连通域中心点
+    roiCenterConnectedComponentEnabled: false,
     selectedPointConnectedComponentEnabled: false,
   });
 
@@ -194,11 +196,12 @@ export const MainLayout: React.FC = () => {
     accept: ['video/*'],
   });
 
-  // Analysis function
-  const startAnalysis = useCallback(async () => {
-    if (!currentVideo || !currentROI) {
+  // Analysis function - returns ConnectedComponentCenter | null
+  const startAnalysis = useCallback(async (roiToUse?: ROI): Promise<ConnectedComponentCenter | null> => {
+    const analysisROI = roiToUse || currentROI;
+    if (!currentVideo || !analysisROI) {
       setError('请先选择视频和ROI区域');
-      return;
+      return null;
     }
     if (!frameCanvasRef.current) {
       setError('当前帧画布尚未准备好，请稍后重试');
@@ -277,9 +280,14 @@ export const MainLayout: React.FC = () => {
         };
       }
 
+      // Debug: Log the ROI object being sent
+      console.log('🔍 Sending ROI:', analysisROI);
+      console.log('🔍 ROI type:', typeof analysisROI);
+      console.log('🔍 ROI keys:', analysisROI ? Object.keys(analysisROI) : 'null');
+
       const response = await apiClient.segmentCurrentFrame({
         imageDataUrl,
-        roi: currentROI,
+        roi: analysisROI,  // 使用传入的ROI而不是currentROI
         modelName: segmentationModel,
         parameters,
       });
@@ -327,16 +335,33 @@ export const MainLayout: React.FC = () => {
           setConnectedComponentCenter(null);
         }
 
+        // 返回连通域中心点给调用者
+        let centerToReturn: ConnectedComponentCenter | null = null;
+        if (response.data.connected_component_center) {
+          const center = response.data.connected_component_center;
+
+          // 验证连通域中心点数据的合理性
+          if (center.x < 0 || center.y < 0 || !center.area || center.area <= 0) {
+            console.warn(`⚠️ 连通域中心点数据异常: 坐标(${center.x}, ${center.y}), 面积${center.area}`);
+          } else {
+            console.log(`✅ 连通域中心点验证通过: ROI相对坐标(${center.x}, ${center.y}), 面积${center.area}px², 置信度${center.confidence}`);
+            centerToReturn = center;
+          }
+        }
+
         setAnalysisState(prev => ({ ...prev, isAnalyzing: false, analysisProgress: 100 }));
+        return centerToReturn;
       } else {
         setError(response.error || response.message || '分析启动失败');
         setAnalysisState(prev => ({ ...prev, isAnalyzing: false }));
+        return null;
       }
     } catch (err) {
       setError('分析失败: ' + (err as Error).message);
       setAnalysisState(prev => ({ ...prev, isAnalyzing: false }));
+      return null;
     }
-  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams, simpleCenterParams, ellipticalMorphParams, displayState.confidenceThreshold, connectedComponentOptions, roiControlState.selectedPoint]);
+  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams, simpleCenterParams, ellipticalMorphParams, displayState.confidenceThreshold, connectedComponentOptions, roiControlState.selectedPoint, apiClient]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -370,6 +395,86 @@ export const MainLayout: React.FC = () => {
   const timeAxisProgress = displayedTotalFrames > 1 ? (currentFrame / (displayedTotalFrames - 1)) * 100 : 0;
 
   // Event handlers
+  const startAutoAnalysis = useCallback(async () => {
+    if (isAutoAnalyzing) {
+      setError('自动分析进行中，请稍候');
+      return;
+    }
+    if (!currentVideo || !currentROI) {
+      setError('请先选择视频和ROI区域');
+      return;
+    }
+
+    setIsAutoAnalyzing(true);
+    setError(`开始自动分析 ${autoAnalysisFrames} 帧...`);
+
+    try {
+      let completedFrames = 0;
+      // 创建当前ROI的引用副本，避免闭包问题
+      let currentROICopy = { ...currentROI };
+
+      for (let i = 0; i < autoAnalysisFrames; i++) {
+        const targetFrame = currentFrame + 1 + i;
+        if (targetFrame >= displayedTotalFrames) {
+          setError(`已到达视频末尾，完成 ${completedFrames} 帧分析`);
+          break;
+        }
+
+        // 移动到目标帧
+        console.log(`🔄 自动分析第 ${i + 1}/${autoAnalysisFrames} 帧: 移动到帧 ${targetFrame}`);
+        setCurrentFrame(targetFrame);
+
+        // 等待一帧以确保帧加载完成
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // 执行分析并获取最新的连通域中心点
+        console.log(`🔍 执行帧 ${targetFrame} 的分析...`);
+        console.log(`📐 使用的ROI: (${currentROICopy.x}, ${currentROICopy.y}), 大小: ${currentROICopy.width}x${currentROICopy.height}`);
+        const latestCenterPoint = await startAnalysis(currentROICopy);
+
+        // 使用返回的中心点移动ROI，而不是依赖闭包状态
+        if (latestCenterPoint) {
+          // latestCenterPoint已经是相对于ROI的坐标，需要转换为图像绝对坐标
+          const absCenterX = currentROICopy.x + latestCenterPoint.x;
+          const absCenterY = currentROICopy.y + latestCenterPoint.y;
+
+          const canvasWidth = frameCanvasRef.current?.width || 800;
+          const canvasHeight = frameCanvasRef.current?.height || 600;
+
+          // 计算新的ROI位置（将ROI中心移动到连通域中心点）
+          const newROI: ROI = {
+            x: Math.max(0, Math.min(absCenterX - currentROICopy.width / 2, canvasWidth - currentROICopy.width)),
+            y: Math.max(0, Math.min(absCenterY - currentROICopy.height / 2, canvasHeight - currentROICopy.height)),
+            width: currentROICopy.width,
+            height: currentROICopy.height,
+          };
+
+          console.log(`📊 帧 ${targetFrame}: 连通域中心点ROI相对坐标(${latestCenterPoint.x}, ${latestCenterPoint.y})`);
+          console.log(`📊 帧 ${targetFrame}: 连通域中心点图像绝对坐标(${absCenterX}, ${absCenterY})`);
+          console.log(`📊 帧 ${targetFrame}: ROI从 (${currentROICopy.x}, ${currentROICopy.y}) 移动到 (${newROI.x}, ${newROI.y})`);
+          currentROICopy = newROI; // 更新副本
+          setCurrentROI(newROI); // 更新状态
+        } else {
+          console.log(`⚠️ 帧 ${targetFrame}: 未检测到连通域中心点（mask为空），ROI保持不变`);
+        }
+
+        completedFrames++;
+
+        // 等待分析完成
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      setError(`✅ 自动分析完成！成功处理了 ${completedFrames} 帧，ROI已根据静脉中心点进行跟踪`);
+    } catch (error) {
+      console.error('自动分析过程中发生错误:', error);
+      setError('自动分析过程中发生错误');
+    } finally {
+      setIsAutoAnalyzing(false);
+      // 3秒后清除消息
+      setTimeout(() => setError(null), 3000);
+    }
+  }, [currentVideo, currentROI, currentFrame, displayedTotalFrames, autoAnalysisFrames, isAutoAnalyzing, startAnalysis]);
+
   const handleMouseDown = useCallback(() => {
     setIsResizing(true);
   }, []);
@@ -417,9 +522,9 @@ export const MainLayout: React.FC = () => {
 
   useEffect(() => {
     return () => {
-      revokeBlobUrl(previewUrlRef.current);
-    };
-  }, [revokeBlobUrl]);
+        revokeBlobUrl(previewUrlRef.current);
+      };
+    }, [revokeBlobUrl]);
 
   // Initialize component
   useEffect(() => {
@@ -430,21 +535,22 @@ export const MainLayout: React.FC = () => {
   return (
     <div
       id="main-container"
-      className="h-screen bg-gray-900 text-white flex flex-col"
-      {...fileInputProps}
-    >
+        className="h-screen bg-gray-900 text-white flex flex-col"
+        {...fileInputProps}
+      >
       <HeaderPanel
-        currentVideo={currentVideo}
-        segmentationModel={segmentationModel}
-        isAnalyzing={analysisState.isAnalyzing}
-        analysisProgress={analysisState.analysisProgress}
-        showSegmentationOverlay={displayState.showSegmentationOverlay}
-        showCenterPoints={displayState.showCenterPoints}
-        showSettingsPanel={displayState.showSettingsPanel}
-        error={error}
-        onFileUpload={handleFileUpload}
-        onModelChange={setSegmentationModel}
-        onStartAnalysis={startAnalysis}
+          currentVideo={currentVideo}
+          segmentationModel={segmentationModel}
+          isAnalyzing={analysisState.isAnalyzing}
+          analysisProgress={analysisState.analysisProgress}
+          showSegmentationOverlay={displayState.showSegmentationOverlay}
+          showCenterPoints={displayState.showCenterPoints}
+          showSettingsPanel={displayState.showSettingsPanel}
+          error={error}
+          onFileUpload={handleFileUpload}
+          onModelChange={setSegmentationModel}
+          // 注意：这里包一层，避免 React 把点击事件作为参数传给 startAnalysis
+          onStartAnalysis={() => { void startAnalysis(); }}
         onToggleSegmentationOverlay={() => setDisplayState(prev => ({ ...prev, showSegmentationOverlay: !prev.showSegmentationOverlay }))}
         onToggleCenterPoints={() => setDisplayState(prev => ({ ...prev, showCenterPoints: !prev.showCenterPoints }))}
         onToggleSettingsPanel={() => setDisplayState(prev => ({ ...prev, showSettingsPanel: !prev.showSettingsPanel }))}
@@ -525,6 +631,11 @@ export const MainLayout: React.FC = () => {
               onPanMouseMove={videoControls.handlePanMouseMove}
               onPanMouseUp={videoControls.handlePanMouseUp}
               onCurrentFrameChange={setCurrentFrame}
+              // 自动分析相关
+              autoAnalysisFrames={autoAnalysisFrames}
+              isAutoAnalyzing={isAutoAnalyzing}
+              onAutoAnalysisFramesChange={setAutoAnalysisFrames}
+              onStartAutoAnalysis={startAutoAnalysis}
             />
           </div>
         </div>

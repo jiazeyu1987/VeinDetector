@@ -1,5 +1,7 @@
-﻿from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query
+﻿from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Query, Request
 from fastapi.responses import JSONResponse, FileResponse
+from fastapi.exceptions import RequestValidationError
+import traceback
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -55,6 +57,22 @@ app = FastAPI(
     description="基于OpenCV的超声静脉检测和跟踪系统",
     version="1.0.0"
 )
+
+# 添加全局异常处理器来捕获422错误
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error(f"422 Validation Error for {request.method} {request.url}:")
+    logger.error(f"Request body: {await request.body()}")
+    logger.error(f"Validation errors: {exc.errors()}")
+    logger.error(f"Full traceback: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": exc.errors(),
+            "body": await request.body(),
+            "error": "Validation failed"
+        }
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -360,7 +378,7 @@ async def health_check():
 async def analyze_frame_with_samus(request: SamusAnalysisRequest):
     """
     使用 SAMUS 模型对当前帧进行静脉分割。
- 
+
     前端输入格式：
     - image_data_url: 当前帧的 data URL（即 canvas.toDataURL）
     - roi: 当前帧上的 ROI 区域
