@@ -761,8 +761,11 @@ class EllipticalMorphSegmentor:
 
                 # 检查是否启用直接显示原始mask
                 if direct_raw_mask_display:
-                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels")
-                    return mask
+                    # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
+                    full_mask = np.zeros((height, width), dtype=np.uint8)
+                    full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
+                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
+                    return full_mask
 
                 # 轻微的形态学操作确保区域分离
                 kernel_small = np.ones((2, 2), np.uint8)
@@ -783,6 +786,14 @@ class EllipticalMorphSegmentor:
                     # 直接返回纯阈值分割结果，不进行任何后处理
                     threshold_pixels = (mask > 0).sum()
                     logger.info(f"EllipticalMorph: Pure threshold segmentation - {threshold_pixels} pixels in range [{threshold_min}, {threshold_max}]")
+
+                    # 检查是否启用直接显示原始mask
+                    if direct_raw_mask_display:
+                        # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
+                        full_mask = np.zeros((height, width), dtype=np.uint8)
+                        full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
+                        logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
+                        return full_mask
 
                     # 直接返回结果，跳过所有连通域分析
                     return mask
@@ -809,9 +820,12 @@ class EllipticalMorphSegmentor:
 
                 # 检查是否启用直接显示原始mask
                 if direct_raw_mask_display:
+                    # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
+                    full_mask = np.zeros((height, width), dtype=np.uint8)
+                    full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
                     threshold_pixels = (mask > 0).sum()
-                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels")
-                    return mask
+                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
+                    return full_mask
 
                 # 第三步：纯阈值分割，不进行任何形态学操作
                 processed = mask.copy()
