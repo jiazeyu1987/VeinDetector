@@ -1,5 +1,14 @@
 // Algorithm parameter types for vein detection
 
+// 处理模式枚举 - 五种互斥的处理模式
+export enum ProcessingMode {
+  DIRECT_RAW_MASK = 'direct_raw_mask',          // 直接显示原始mask
+  IMAGE_PREPROCESSING = 'image_preprocessing',   // 图像预处理
+  MAX_CONNECTED_COMPONENT = 'max_connected_component',  // 最大连通区域检测
+  ROI_CENTER_CONNECTED = 'roi_center_connected',  // ROI中心点连通域检测
+  SELECTED_POINT_CONNECTED = 'selected_point_connected'  // 选中点连通域检测
+}
+
 export type EnhancedCVParams = {
   blurKernelSize: number;
   claheClipLimit: number;
@@ -41,14 +50,8 @@ export type EllipticalMorphParams = {
   blurKernelSize: number;
   claheClipLimit: number;
   claheTileGridSize: number;
-  preprocessingEnabled: boolean;
-};
-
-export type ConnectedComponentOptions = {
-  ellipticalConstraintEnabled: boolean;
-  maxConnectedComponentEnabled: boolean;
-  roiCenterConnectedComponentEnabled: boolean;
-  selectedPointConnectedComponentEnabled: boolean;
+  processingMode: ProcessingMode;  // 使用新的枚举替代多个布尔值
+  ellipticalConstraintEnabled: boolean;  // 保留椭圆约束选项
 };
 
 export type Point2D = {

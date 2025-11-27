@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { VideoInfo, ROI, VeinDetectionResult } from '../api/types';
 import { apiClient, mockApi } from '../api/client';
-import { ConnectedComponentCenter } from '../types/algorithm';
+import { ConnectedComponentCenter, ProcessingMode } from '../types/algorithm';
 
 // Import extracted components
 import { HeaderPanel } from './panels/HeaderPanel';
@@ -24,7 +24,6 @@ import {
   GrayscaleInfo,
   AnalysisState,
   ROIControlState,
-  ConnectedComponentOptions,
   Point2D,
 } from '../types/algorithm';
 
@@ -144,14 +143,8 @@ export const MainLayout: React.FC = () => {
     blurKernelSize: 5,
     claheClipLimit: 2.0,
     claheTileGridSize: 8,
-    preprocessingEnabled: true,  // 默认启用预处理
-  });
-
-  const [connectedComponentOptions, setConnectedComponentOptions] = useState<ConnectedComponentOptions>({
+    processingMode: ProcessingMode.DIRECT_RAW_MASK,  // 默认选择直接显示原始mask
     ellipticalConstraintEnabled: false,
-    maxConnectedComponentEnabled: true,  // 启用最大连通区域检测以获得连通域中心点
-    roiCenterConnectedComponentEnabled: false,
-    selectedPointConnectedComponentEnabled: false,
   });
 
   // Custom hooks
@@ -278,11 +271,13 @@ export const MainLayout: React.FC = () => {
           blur_kernel_size: ellipticalMorphParams.blurKernelSize,
           clahe_clip_limit: ellipticalMorphParams.claheClipLimit,
           clahe_tile_grid_size: ellipticalMorphParams.claheTileGridSize,
-          preprocessing_enabled: ellipticalMorphParams.preprocessingEnabled ? 1 : 0,  // boolean转number
-          elliptical_constraint_enabled: connectedComponentOptions.ellipticalConstraintEnabled ? 1 : 0,
-          max_connected_component_enabled: connectedComponentOptions.maxConnectedComponentEnabled ? 1 : 0,
-          roi_center_connected_component_enabled: connectedComponentOptions.roiCenterConnectedComponentEnabled ? 1 : 0,
-          selected_point_connected_component_enabled: connectedComponentOptions.selectedPointConnectedComponentEnabled ? 1 : 0,
+          // 根据processingMode设置相应的后端参数
+          preprocessing_enabled: ellipticalMorphParams.processingMode === ProcessingMode.IMAGE_PREPROCESSING ? 1 : 0,
+          direct_raw_mask_display: ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK ? 1 : 0,
+          elliptical_constraint_enabled: ellipticalMorphParams.ellipticalConstraintEnabled ? 1 : 0,
+          max_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.MAX_CONNECTED_COMPONENT ? 1 : 0,
+          roi_center_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.ROI_CENTER_CONNECTED ? 1 : 0,
+          selected_point_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.SELECTED_POINT_CONNECTED ? 1 : 0,
           selected_point_x: roiControlState.selectedPoint?.x || 0,
           selected_point_y: roiControlState.selectedPoint?.y || 0,
         };
@@ -369,7 +364,7 @@ export const MainLayout: React.FC = () => {
       setAnalysisState(prev => ({ ...prev, isAnalyzing: false }));
       return null;
     }
-  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams, simpleCenterParams, ellipticalMorphParams, displayState.confidenceThreshold, connectedComponentOptions, roiControlState.selectedPoint, apiClient]);
+  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams, simpleCenterParams, ellipticalMorphParams, displayState.confidenceThreshold, roiControlState.selectedPoint, apiClient]);
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -451,6 +446,8 @@ export const MainLayout: React.FC = () => {
 
           // 计算新的ROI位置（将ROI中心移动到连通域中心点）
           const newROI: ROI = {
+            id: `roi-${Date.now()}`,
+            frameIndex: targetFrame,
             x: Math.max(0, Math.min(absCenterX - currentROICopy.width / 2, canvasWidth - currentROICopy.width)),
             y: Math.max(0, Math.min(absCenterY - currentROICopy.height / 2, canvasHeight - currentROICopy.height)),
             width: currentROICopy.width,
@@ -623,7 +620,7 @@ export const MainLayout: React.FC = () => {
               showCenterPoints={displayState.showCenterPoints}
               analysisCenterPoints={analysisCenterPoints}
               selectedPoint={roiControlState.selectedPoint}
-              enablePointSelection={connectedComponentOptions.selectedPointConnectedComponentEnabled || roiControlState.isPointSelectionMode}
+              enablePointSelection={ellipticalMorphParams.processingMode === 'selected_point_connected' || roiControlState.isPointSelectionMode}
               isPointSelectionMode={roiControlState.isPointSelectionMode}
               connectedComponentCenter={connectedComponentCenter}
               onFrameChange={setCurrentFrame}
@@ -686,7 +683,6 @@ export const MainLayout: React.FC = () => {
               simpleMorphStrength={simpleMorphStrength}
               ellipticalMorphParams={ellipticalMorphParams}
               autoAnalysisEnabled={analysisState.autoAnalysisEnabled}
-              connectedComponentOptions={connectedComponentOptions}
               selectedPoint={roiControlState.selectedPoint}
               isPointSelectionMode={roiControlState.isPointSelectionMode}
               onSegmentationModelChange={setSegmentationModel}
@@ -699,7 +695,6 @@ export const MainLayout: React.FC = () => {
               onSimpleMorphStrengthChange={setSimpleMorphStrength}
               onEllipticalMorphParamsChange={setEllipticalMorphParams}
               onAutoAnalysisChange={(enabled) => setAnalysisState(prev => ({ ...prev, autoAnalysisEnabled: enabled }))}
-              onConnectedComponentChange={setConnectedComponentOptions}
               onPointSelectModeChange={(enabled) => setRoiControlState(prev => ({ ...prev, isPointSelectionMode: enabled }))}
               onSelectedPointChange={(point) => setRoiControlState(prev => ({ ...prev, selectedPoint: point }))}
             />

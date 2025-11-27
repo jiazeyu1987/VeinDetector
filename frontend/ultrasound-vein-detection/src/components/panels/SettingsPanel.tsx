@@ -3,7 +3,7 @@ import { DisplayState, GrayscaleInfo } from '../../types/algorithm';
 import { EnhancedCVControls } from '../controls/EnhancedCVControls';
 import { SimpleCenterControls } from '../controls/SimpleCenterControls';
 import { EllipticalMorphControls } from '../controls/EllipticalMorphControls';
-import { EnhancedCVParams, SimpleCenterParams, EllipticalMorphParams, ConnectedComponentOptions, Point2D } from '../../types/algorithm';
+import { EnhancedCVParams, SimpleCenterParams, EllipticalMorphParams, Point2D } from '../../types/algorithm';
 
 interface SettingsPanelProps {
   segmentationModel: string;
@@ -16,7 +16,6 @@ interface SettingsPanelProps {
   simpleMorphStrength: number;
   ellipticalMorphParams: EllipticalMorphParams;
   autoAnalysisEnabled: boolean;
-  connectedComponentOptions: ConnectedComponentOptions;
   selectedPoint: Point2D | null;
   isPointSelectionMode: boolean;
   onSegmentationModelChange: (model: string) => void;
@@ -29,7 +28,6 @@ interface SettingsPanelProps {
   onSimpleMorphStrengthChange: (strength: number) => void;
   onEllipticalMorphParamsChange: (params: EllipticalMorphParams) => void;
   onAutoAnalysisChange: (enabled: boolean) => void;
-  onConnectedComponentChange: (options: ConnectedComponentOptions) => void;
   onPointSelectModeChange: (enabled: boolean) => void;
   onSelectedPointChange: (point: Point2D | null) => void;
 }
@@ -45,7 +43,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   simpleMorphStrength,
   ellipticalMorphParams,
   autoAnalysisEnabled,
-  connectedComponentOptions,
   selectedPoint,
   isPointSelectionMode,
   onSegmentationModelChange,
@@ -58,7 +55,6 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
   onSimpleMorphStrengthChange,
   onEllipticalMorphParamsChange,
   onAutoAnalysisChange,
-  onConnectedComponentChange,
   onPointSelectModeChange,
   onSelectedPointChange,
 }) => {
@@ -232,12 +228,10 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({
           <EllipticalMorphControls
             params={ellipticalMorphParams}
             autoAnalysisEnabled={autoAnalysisEnabled}
-            connectedComponentOptions={connectedComponentOptions}
             selectedPoint={selectedPoint}
             isPointSelectionMode={isPointSelectionMode}
             onParamsChange={onEllipticalMorphParamsChange}
             onAutoAnalysisChange={onAutoAnalysisChange}
-            onConnectedComponentChange={onConnectedComponentChange}
             onPointSelectModeChange={onPointSelectModeChange}
             onSelectedPointChange={onSelectedPointChange}
           />

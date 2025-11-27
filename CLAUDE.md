@@ -34,8 +34,9 @@ The system uses a modern microservices architecture with comprehensive testing i
 npm run dev                    # Start frontend development server
 npm run build                  # Build both frontend and backend
 npm run test                   # Run Jest test suite
+npm run test:watch             # Jest watch mode for continuous testing
 npm run lint                   # ESLint checking
-npm run health-check           # API health check
+npm run health-check           # API health check (curl -f http://localhost:8001/health)
 
 # Comprehensive testing
 npm run test:unit              # Unit tests only
@@ -46,7 +47,6 @@ npm run test:benchmark        # Performance benchmarking
 npm run test:memory           # Memory usage analysis
 npm run test:cpu              # CPU usage analysis
 npm run test:coverage         # Test coverage report
-npm run test:watch            # Jest watch mode for continuous testing
 
 # Docker management
 npm run docker:build           # Build Docker images
@@ -71,6 +71,9 @@ npm run security               # Run security audit (npm audit + snyk)
 # Deployment and monitoring
 npm run deploy                 # Production deployment via scripts/deploy.sh
 npm run deploy:check           # Check deployment environment
+npm run deploy:start           # Start deployment services
+npm run deploy:stop            # Stop deployment services
+npm run deploy:restart         # Restart deployment services
 npm run deploy:monitor         # Monitor deployed services
 npm run monitor                # System monitoring via scripts/monitor.js
 
@@ -84,7 +87,7 @@ npm run doc:serve              # Generate and serve documentation
 cd frontend/ultrasound-vein-detection
 
 # Development server (recommended approach)
-pnpm install --prefer-offline && pnpm dev    # Development with auto-reload (port 3000)
+pnpm dev                                    # Development with auto-reload (port 3000)
 
 # Build and quality
 pnpm build                                  # Production build
@@ -92,6 +95,9 @@ pnpm build:prod                             # Production build with optimization
 pnpm lint                                   # ESLint code checking
 pnpm preview                               # Preview production build
 pnpm clean                                  # Clean dependencies and cache
+
+# Individual dependency management
+pnpm install-deps                          # Install dependencies with offline preference
 ```
 
 ### Backend Development
@@ -103,7 +109,7 @@ cd backend
 
 # Manual development server
 python main.py                              # Run FastAPI application directly
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload  # With hot reload
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload  # With hot reload
 
 # Testing and code quality
 python test_system.py -v                    # Run system tests
@@ -112,9 +118,6 @@ black .                                     # Format code
 flake8 .                                    # Lint code
 mypy .                                      # Type checking
 isort .                                     # Sort imports
-
-# Quick development scripts
-./start.sh                                  # Quick start (sets up venv, installs deps, starts server)
 ```
 
 ##### Docker Development
@@ -126,6 +129,12 @@ docker-compose -f docker-compose.dev.yml logs -f    # View logs
 
 # Production environment (16 services with monitoring)
 docker-compose -f docker-compose.prod.yml up -d     # Start production stack
+docker-compose -f docker-compose.prod.yml down      # Stop production services
+
+# Alternative root-level commands (recommended)
+npm run docker:up                                  # Start containers using default compose
+npm run docker:down                                # Stop containers
+npm run docker:logs                                # View container logs
 ```
 
 ### Development Scripts (Recommended for Automation)
@@ -209,7 +218,7 @@ The system supports real-time parameter adjustment for multiple vein detection a
 ### Environment Variables
 ```bash
 # Frontend
-VITE_API_BASE_URL=http://localhost:8000      # Backend API URL
+VITE_API_BASE_URL=http://localhost:8001      # Backend API URL
 NODE_ENV=development/production              # Environment mode
 
 # Backend
@@ -240,6 +249,12 @@ npm run test:performance                  # Performance tests with load testing
 npm run test:coverage                     # Generate coverage report
 npm run test:benchmark                    # Performance benchmark comparison
 
+# Run single test files
+npx jest tests/unit/videoUpload.test.js                # Single unit test
+npx jest tests/integration/systemIntegration.test.js  # Single integration test
+npx jest tests/performance/performanceOptimization.test.js --runInBand  # Single performance test
+npx tests/e2e/e2e-test-runner.js                      # Run E2E tests directly
+
 # Backend specific
 cd backend && python test_system.py -v    # System integration tests
 cd backend && pytest --cov=.             # Test coverage analysis
@@ -254,7 +269,7 @@ npm run test:cpu                          # CPU usage analysis
 ### Monitoring Scripts
 - `scripts/monitor.js` - Real-time system monitoring with CPU, memory, disk usage tracking
 - `scripts/errorHandler.js` - Comprehensive error handling with severity-based alerting
-- Automated health checks for Frontend (port 3000), Backend (port 8000), Video service (port 8080), Database (port 5432)
+- Automated health checks for Frontend (port 3000), Backend (port 8001), Video service (port 8080), Database (port 5432)
 
 ### Performance Benchmarks
 - **Video upload**: < 5 seconds for 100MB files
@@ -296,7 +311,7 @@ npm run test:cpu                          # CPU usage analysis
 ## Documentation References
 
 ### API Documentation
-- **Interactive API Docs**: Available at `http://localhost:8000/docs` (Swagger UI) when backend is running
+- **Interactive API Docs**: Available at `http://localhost:8001/docs` (Swagger UI) when backend is running
 - **Detailed API References**: Individual endpoint documentation in `docs/api_*.md` files:
   - `docs/api_analysis_samus.md` - SAMUS analysis endpoint with implementation details
   - `docs/api_upload_video.md` - Video upload and processing

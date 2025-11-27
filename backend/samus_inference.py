@@ -716,6 +716,9 @@ class EllipticalMorphSegmentor:
         # 预处理控制参数
         preprocessing_enabled = bool(int(params.get("preprocessing_enabled", 1)))  # 默认启用
 
+        # 直接显示原始mask控制参数
+        direct_raw_mask_display = bool(int(params.get("direct_raw_mask_display", 0)))  # 默认禁用
+
         # 预处理参数
         blur_ksize = int(params.get("blur_kernel_size", 5))
         if blur_ksize % 2 == 0:
@@ -731,8 +734,19 @@ class EllipticalMorphSegmentor:
             "EllipticalMorph point filtering: roi_center_enabled=%s, selected_point_enabled=%s, selected_point=(%s,%s)",
             roi_center_connected_component_enabled, selected_point_connected_component_enabled, selected_point_x, selected_point_y
         )
+        logger.info(
+            "EllipticalMorph display options: preprocessing_enabled=%s, direct_raw_mask_display=%s",
+            preprocessing_enabled, direct_raw_mask_display
+        )
 
         try:
+            # 检查是否所有过滤选项都禁用
+            all_filters_disabled = (
+                not max_connected_component_enabled and
+                not roi_center_connected_component_enabled and
+                not selected_point_connected_component_enabled
+            )
+
             if max_connected_component_enabled:
                 # 最大连通区域模式：直接使用原始图像，避免预处理导致的区域连接
                 logger.info(f"EllipticalMorph: Direct thresholding for max connected component (connectivity=4)")
@@ -745,6 +759,11 @@ class EllipticalMorphSegmentor:
                 threshold_pixels = (mask > 0).sum()
                 logger.info(f"Threshold分割结果：{threshold_pixels}像素在阈值范围内")
 
+                # 检查是否启用直接显示原始mask
+                if direct_raw_mask_display:
+                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels")
+                    return mask
+
                 # 轻微的形态学操作确保区域分离
                 kernel_small = np.ones((2, 2), np.uint8)
                 mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small, iterations=1)
@@ -755,8 +774,20 @@ class EllipticalMorphSegmentor:
 
                 processed = mask.copy()
             else:
-                # 常规模式：根据preprocessing_enabled参数决定是否预处理
-                if preprocessing_enabled:
+                # 常规模式：根据过滤选项和预处理参数决定处理流程
+                if all_filters_disabled and not preprocessing_enabled:
+                    # 纯阈值分割模式：所有过滤选项和预处理都禁用
+                    mask = np.zeros_like(roi_img, dtype=np.uint8)
+                    mask[(roi_img >= threshold_min) & (roi_img <= threshold_max)] = 255
+
+                    # 直接返回纯阈值分割结果，不进行任何后处理
+                    threshold_pixels = (mask > 0).sum()
+                    logger.info(f"EllipticalMorph: Pure threshold segmentation - {threshold_pixels} pixels in range [{threshold_min}, {threshold_max}]")
+
+                    # 直接返回结果，跳过所有连通域分析
+                    return mask
+
+                elif preprocessing_enabled:
                     # 第一步：预处理
                     blurred = cv2.GaussianBlur(roi_img, (blur_ksize, blur_ksize), 0)
                     clahe = cv2.createCLAHE(clipLimit=clahe_clip, tileGridSize=(clahe_tile, clahe_tile))
@@ -769,12 +800,18 @@ class EllipticalMorphSegmentor:
                     logger.info("EllipticalMorph: Using preprocessing flow (GaussianBlur + CLAHE)")
                     logger.info(f"  预处理参数: blur_kernel_size={blur_ksize}, clahe_clip_limit={clahe_clip}, clahe_tile_size={clahe_tile}")
                 else:
-                    # 直接对原始图像进行阈值分割（不预处理）
+                    # 直接对原始图像进行阈值分割（不预处理，但需要后续连通域分析）
                     mask = np.zeros_like(roi_img, dtype=np.uint8)
                     mask[(roi_img >= threshold_min) & (roi_img <= threshold_max)] = 255
 
                     logger.info("EllipticalMorph: Direct thresholding without preprocessing")
                     logger.info(f"  阈值范围: [{threshold_min}, {threshold_max}]")
+
+                # 检查是否启用直接显示原始mask
+                if direct_raw_mask_display:
+                    threshold_pixels = (mask > 0).sum()
+                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels")
+                    return mask
 
                 # 第三步：纯阈值分割，不进行任何形态学操作
                 processed = mask.copy()
