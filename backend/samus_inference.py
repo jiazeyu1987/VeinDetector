@@ -882,9 +882,9 @@ class EllipticalMorphSegmentor:
                             area = stats[center_label, cv2.CC_STAT_AREA]
                             logger.info(f"保留ROI中心连通区域 {center_label}，面积={area}")
                         else:
-                            logger.warning("ROI中心点不在任何连通区域内，保留所有连通区域")
-                            final_mask = processed.copy()
-                            kept_components.append("all_regions")
+                            logger.warning("ROI中心点不在任何连通区域内，返回空mask")
+                            final_mask = np.zeros_like(processed)
+                            kept_components.append("empty_result")
 
                     elif selected_point_connected_component_enabled:
                         # 选中点连通域模式
@@ -901,13 +901,13 @@ class EllipticalMorphSegmentor:
                                 area = stats[selected_label, cv2.CC_STAT_AREA]
                                 logger.info(f"保留选中点连通区域 {selected_label}，面积={area}")
                             else:
-                                logger.warning("选中点不在任何连通区域内，保留所有连通区域")
-                                final_mask = processed.copy()
-                                kept_components.append("all_regions")
+                                logger.warning("选中点不在任何连通区域内，返回空mask")
+                                final_mask = np.zeros_like(processed)
+                                kept_components.append("empty_result")
                         else:
-                            logger.warning(f"选中点 ({selected_point_x}, {selected_point_y}) 超出ROI范围 ({roi_w}x{roi_h})，保留所有连通区域")
-                            final_mask = processed.copy()
-                            kept_components.append("all_regions")
+                            logger.warning(f"选中点 ({selected_point_x}, {selected_point_y}) 超出ROI范围 ({roi_w}x{roi_h})，返回空mask")
+                            final_mask = np.zeros_like(processed)
+                            kept_components.append("empty_result")
 
                     mask_roi = final_mask
                     kept_contours = len(kept_components)
