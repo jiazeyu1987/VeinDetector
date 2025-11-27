@@ -145,8 +145,8 @@ export const MainLayout: React.FC = () => {
   const [simpleMorphStrength, setSimpleMorphStrength] = useState(0.5);
 
   const [ellipticalMorphParams, setEllipticalMorphParams] = useState<EllipticalMorphParams>({
-    thresholdMin: 50,
-    thresholdMax: 127,
+    thresholdMin: 0,
+    thresholdMax: 3,
     ellipseMajorAxis: 15,
     ellipseMinorAxis: 10,
     ellipseAngle: 0,
@@ -154,7 +154,7 @@ export const MainLayout: React.FC = () => {
     blurKernelSize: 5,
     claheClipLimit: 2.0,
     claheTileGridSize: 8,
-    processingMode: ProcessingMode.DIRECT_RAW_MASK,  // 默认选择直接显示原始mask
+    processingMode: ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER,  // 默认选择直接显示原始mask + ROI中心点筛选
     ellipticalConstraintEnabled: false,
   });
 

@@ -162,14 +162,17 @@ export const HeaderPanel: React.FC<HeaderPanelProps> = ({
               <option value="elliptical_morph">阈值分割</option>
             </select>
           </div>
-          <button
-            onClick={onStartAnalysis}
-            disabled={!currentVideo || isAnalyzing}
-            className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded flex items-center space-x-2 transition-colors"
-          >
-            <BarChart3 size={16} />
-            <span>{isAnalyzing ? `分析中... ${analysisProgress}%` : '开始分析'}</span>
-          </button>
+          {/* 开始分析按钮 - 自动分析运行时隐藏 */}
+          {!isAutoAnalyzing && (
+            <button
+              onClick={onStartAnalysis}
+              disabled={!currentVideo || isAnalyzing}
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded flex items-center space-x-2 transition-colors"
+            >
+              <BarChart3 size={16} />
+              <span>{isAnalyzing ? `分析中... ${analysisProgress}%` : '开始分析'}</span>
+            </button>
+          )}
           <button
             onClick={onToggleSegmentationOverlay}
             disabled={!showSegmentationOverlay}

@@ -84,7 +84,7 @@ export const EllipticalMorphControls: React.FC<EllipticalMorphControlsProps> = (
               <input
                 type="range"
                 min="0"
-                max="255"
+                max="50"
                 value={params.thresholdMin}
                 onChange={e => updateParam('thresholdMin', Number(e.target.value))}
                 className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
@@ -99,14 +99,14 @@ export const EllipticalMorphControls: React.FC<EllipticalMorphControlsProps> = (
               <input
                 type="range"
                 min="0"
-                max="255"
+                max="50"
                 value={params.thresholdMax}
                 onChange={e => updateParam('thresholdMax', Number(e.target.value))}
                 className="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer slider"
               />
               <div className="flex justify-between text-xs text-gray-500 mt-1">
                 <span>0</span>
-                <span>255</span>
+                <span>50</span>
               </div>
             </div>
           </div>
