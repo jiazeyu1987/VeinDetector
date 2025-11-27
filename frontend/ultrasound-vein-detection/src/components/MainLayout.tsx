@@ -23,6 +23,8 @@ import {
   DisplayState,
   GrayscaleInfo,
   AnalysisState,
+  AutoAnalysisState,
+  AutoAnalysisControl,
   ROIControlState,
   Point2D,
 } from '../types/algorithm';
@@ -34,6 +36,14 @@ export const MainLayout: React.FC = () => {
   const [currentROI, setCurrentROI] = useState<ROI | null>(null);
   const [autoAnalysisFrames, setAutoAnalysisFrames] = useState(10);  // 默认10帧
   const [isAutoAnalyzing, setIsAutoAnalyzing] = useState(false);
+
+  // Auto analysis control state
+  const [autoAnalysisState, setAutoAnalysisState] = useState<AutoAnalysisState>('idle');
+  const [autoAnalysisProgress, setAutoAnalysisProgress] = useState(0);
+  const [autoAnalysisCompletedFrames, setAutoAnalysisCompletedFrames] = useState(0);
+  const [autoAnalysisController, setAutoAnalysisController] = useState<AbortController | null>(null);
+  const [savedROI, setSavedROI] = useState<ROI | null>(null);
+  const [savedCurrentFrame, setSavedCurrentFrame] = useState(0);
   const [detectionResults, setDetectionResults] = useState<VeinDetectionResult[]>([]);
   const [currentDetection, setCurrentDetection] = useState<VeinDetectionResult | undefined>();
   const [segmentationMask, setSegmentationMask] = useState<number[][] | null>(null);
@@ -45,6 +55,7 @@ export const MainLayout: React.FC = () => {
   const [isResizing, setIsResizing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [testMode, setTestMode] = useState(false);
 
   // Algorithm and analysis state
@@ -153,6 +164,31 @@ export const MainLayout: React.FC = () => {
   const previewUrlRef = useRef<string | null>(null);
   const autoAnalysisRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Add refs for dynamic values to prevent useCallback dependency issues
+  const isAnalysisRunningRef = useRef(false);
+  const currentVideoRef = useRef(currentVideo);
+  const currentROIRef = useRef(currentROI);
+  const segmentationModelRef = useRef(segmentationModel);
+  const enhancedCVParamsRef = useRef(enhancedCVParams);
+  const simpleCenterParamsRef = useRef(simpleCenterParams);
+  const ellipticalMorphParamsRef = useRef(ellipticalMorphParams);
+  const displayStateRef = useRef(displayState);
+  const roiControlStateRef = useRef(roiControlState);
+  const apiClientRef = useRef(apiClient);
+  const currentFrameRef = useRef(currentFrame);
+
+  // Update refs when values change
+  useEffect(() => { currentVideoRef.current = currentVideo; }, [currentVideo]);
+  useEffect(() => { currentROIRef.current = currentROI; }, [currentROI]);
+  useEffect(() => { segmentationModelRef.current = segmentationModel; }, [segmentationModel]);
+  useEffect(() => { enhancedCVParamsRef.current = enhancedCVParams; }, [enhancedCVParams]);
+  useEffect(() => { simpleCenterParamsRef.current = simpleCenterParams; }, [simpleCenterParams]);
+  useEffect(() => { ellipticalMorphParamsRef.current = ellipticalMorphParams; }, [ellipticalMorphParams]);
+  useEffect(() => { displayStateRef.current = displayState; }, [displayState]);
+  useEffect(() => { roiControlStateRef.current = roiControlState; }, [roiControlState]);
+  useEffect(() => { apiClientRef.current = apiClient; }, [apiClient]);
+  useEffect(() => { currentFrameRef.current = currentFrame; }, [currentFrame]);
+
   // File handling
   const revokeBlobUrl = useCallback((url?: string | null) => {
     if (url && url.startsWith('blob:')) {
@@ -199,15 +235,25 @@ export const MainLayout: React.FC = () => {
 
   // Analysis function - returns ConnectedComponentCenter | null
   const startAnalysis = useCallback(async (roiToUse?: ROI): Promise<ConnectedComponentCenter | null> => {
-    const analysisROI = roiToUse || currentROI;
-    if (!currentVideo || !analysisROI) {
+    // Prevent concurrent execution
+    if (isAnalysisRunningRef.current) {
+      console.log('🛡️ Analysis already running, blocking concurrent call');
+      return null;
+    }
+
+    // Use refs for dynamic values instead of dependencies
+    const analysisROI = roiToUse || currentROIRef.current;
+    if (!currentVideoRef.current || !analysisROI) {
       setError('请先选择视频和ROI区域');
       return null;
     }
     if (!frameCanvasRef.current) {
       setError('当前帧画布尚未准备好，请稍后重试');
-      return;
+      return null;
     }
+
+    // Mark as running
+    isAnalysisRunningRef.current = true;
     try {
       setAnalysisState(prev => ({ ...prev, isAnalyzing: true, analysisProgress: 0 }));
       setError(null);
@@ -223,63 +269,64 @@ export const MainLayout: React.FC = () => {
       const imageDataUrl = canvas.toDataURL('image/png');
       let parameters: Record<string, number> | undefined;
 
-      const cvName = segmentationModel.toLowerCase();
+      const cvName = segmentationModelRef.current.toLowerCase();
       if (['cv_enhanced', 'cv-advanced', 'cv-frangi'].includes(cvName)) {
         parameters = {
-          blur_kernel_size: enhancedCVParams.blurKernelSize,
-          clahe_clip_limit: enhancedCVParams.claheClipLimit,
-          clahe_tile_grid_size: enhancedCVParams.claheTileGridSize,
-          frangi_scale_min: enhancedCVParams.frangiScaleMin,
-          frangi_scale_max: enhancedCVParams.frangiScaleMax,
-          frangi_scale_step: enhancedCVParams.frangiScaleStep,
-          frangi_threshold: enhancedCVParams.frangiThreshold,
-          area_min: enhancedCVParams.areaMin,
-          area_max: enhancedCVParams.areaMax,
-          aspect_ratio_min: enhancedCVParams.aspectRatioMin,
-          aspect_ratio_max: enhancedCVParams.aspectRatioMax,
-          center_band_top: enhancedCVParams.centerBandTop,
-          center_band_bottom: enhancedCVParams.centerBandBottom,
-          morph_kernel_size: enhancedCVParams.morphKernelSize,
-          morph_close_iterations: enhancedCVParams.morphCloseIterations,
-          morph_open_iterations: enhancedCVParams.morphOpenIterations,
+          blur_kernel_size: enhancedCVParamsRef.current.blurKernelSize,
+          clahe_clip_limit: enhancedCVParamsRef.current.claheClipLimit,
+          clahe_tile_grid_size: enhancedCVParamsRef.current.claheTileGridSize,
+          frangi_scale_min: enhancedCVParamsRef.current.frangiScaleMin,
+          frangi_scale_max: enhancedCVParamsRef.current.frangiScaleMax,
+          frangi_scale_step: enhancedCVParamsRef.current.frangiScaleStep,
+          frangi_threshold: enhancedCVParamsRef.current.frangiThreshold,
+          area_min: enhancedCVParamsRef.current.areaMin,
+          area_max: enhancedCVParamsRef.current.areaMax,
+          aspect_ratio_min: enhancedCVParamsRef.current.aspectRatioMin,
+          aspect_ratio_max: enhancedCVParamsRef.current.aspectRatioMax,
+          center_band_top: enhancedCVParamsRef.current.centerBandTop,
+          center_band_bottom: enhancedCVParamsRef.current.centerBandBottom,
+          morph_kernel_size: enhancedCVParamsRef.current.morphKernelSize,
+          morph_close_iterations: enhancedCVParamsRef.current.morphCloseIterations,
+          morph_open_iterations: enhancedCVParamsRef.current.morphOpenIterations,
         };
       } else if (cvName === 'cv_simple_center') {
-        const v = displayState.confidenceThreshold;
+        const v = displayStateRef.current.confidenceThreshold;
         const areaMinFactor = 0.01 + 0.05 * v;
         const areaMaxFactor = 0.6 - 0.4 * v;
         const circularityMin = 0.2 + 0.6 * v;
 
         parameters = {
-          blur_kernel_size: simpleCenterParams.blurKernelSize,
-          clahe_clip_limit: simpleCenterParams.claheClipLimit,
-          clahe_tile_grid_size: simpleCenterParams.claheTileGridSize,
-          morph_kernel_size: simpleCenterParams.morphKernelSize,
-          morph_close_iterations: simpleCenterParams.morphCloseIterations,
-          morph_open_iterations: simpleCenterParams.morphOpenIterations,
+          blur_kernel_size: simpleCenterParamsRef.current.blurKernelSize,
+          clahe_clip_limit: simpleCenterParamsRef.current.claheClipLimit,
+          clahe_tile_grid_size: simpleCenterParamsRef.current.claheTileGridSize,
+          morph_kernel_size: simpleCenterParamsRef.current.morphKernelSize,
+          morph_close_iterations: simpleCenterParamsRef.current.morphCloseIterations,
+          morph_open_iterations: simpleCenterParamsRef.current.morphOpenIterations,
           area_min_factor: areaMinFactor,
           area_max_factor: areaMaxFactor,
           circularity_min: circularityMin,
         };
       } else if (cvName === 'elliptical_morph') {
+        const currentParams = ellipticalMorphParamsRef.current;
         parameters = {
-          threshold_min: ellipticalMorphParams.thresholdMin,
-          threshold_max: ellipticalMorphParams.thresholdMax,
-          ellipse_major_axis: ellipticalMorphParams.ellipseMajorAxis,
-          ellipse_minor_axis: ellipticalMorphParams.ellipseMinorAxis,
-          ellipse_angle: ellipticalMorphParams.ellipseAngle,
-          morph_strength: ellipticalMorphParams.morphStrength,
-          blur_kernel_size: ellipticalMorphParams.blurKernelSize,
-          clahe_clip_limit: ellipticalMorphParams.claheClipLimit,
-          clahe_tile_grid_size: ellipticalMorphParams.claheTileGridSize,
+          threshold_min: currentParams.thresholdMin,
+          threshold_max: currentParams.thresholdMax,
+          ellipse_major_axis: currentParams.ellipseMajorAxis,
+          ellipse_minor_axis: currentParams.ellipseMinorAxis,
+          ellipse_angle: currentParams.ellipseAngle,
+          morph_strength: currentParams.morphStrength,
+          blur_kernel_size: currentParams.blurKernelSize,
+          clahe_clip_limit: currentParams.claheClipLimit,
+          clahe_tile_grid_size: currentParams.claheTileGridSize,
           // 根据processingMode设置相应的后端参数
-          preprocessing_enabled: ellipticalMorphParams.processingMode === ProcessingMode.IMAGE_PREPROCESSING ? 1 : 0,
-          direct_raw_mask_display: (ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_MAX_CONNECTED) ? 1 : 0,
-          elliptical_constraint_enabled: ellipticalMorphParams.ellipticalConstraintEnabled ? 1 : 0,
-          max_connected_component_enabled: (ellipticalMorphParams.processingMode === ProcessingMode.MAX_CONNECTED_COMPONENT || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_MAX_CONNECTED) ? 1 : 0,
-          roi_center_connected_component_enabled: (ellipticalMorphParams.processingMode === ProcessingMode.ROI_CENTER_CONNECTED || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER) ? 1 : 0,
-          selected_point_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.SELECTED_POINT_CONNECTED ? 1 : 0,
-          selected_point_x: roiControlState.selectedPoint?.x || 0,
-          selected_point_y: roiControlState.selectedPoint?.y || 0,
+          preprocessing_enabled: currentParams.processingMode === ProcessingMode.IMAGE_PREPROCESSING ? 1 : 0,
+          direct_raw_mask_display: (currentParams.processingMode === ProcessingMode.DIRECT_RAW_MASK || currentParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER || currentParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_MAX_CONNECTED) ? 1 : 0,
+          elliptical_constraint_enabled: currentParams.ellipticalConstraintEnabled ? 1 : 0,
+          max_connected_component_enabled: (currentParams.processingMode === ProcessingMode.MAX_CONNECTED_COMPONENT || currentParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_MAX_CONNECTED) ? 1 : 0,
+          roi_center_connected_component_enabled: (currentParams.processingMode === ProcessingMode.ROI_CENTER_CONNECTED || currentParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER) ? 1 : 0,
+          selected_point_connected_component_enabled: currentParams.processingMode === ProcessingMode.SELECTED_POINT_CONNECTED ? 1 : 0,
+          selected_point_x: roiControlStateRef.current.selectedPoint?.x || 0,
+          selected_point_y: roiControlStateRef.current.selectedPoint?.y || 0,
         };
       }
 
@@ -288,10 +335,10 @@ export const MainLayout: React.FC = () => {
       console.log('🔍 ROI type:', typeof analysisROI);
       console.log('🔍 ROI keys:', analysisROI ? Object.keys(analysisROI) : 'null');
 
-      const response = await apiClient.segmentCurrentFrame({
+      const response = await apiClientRef.current.segmentCurrentFrame({
         imageDataUrl,
         roi: analysisROI,  // 使用传入的ROI而不是currentROI
-        modelName: segmentationModel,
+        modelName: segmentationModelRef.current,
         parameters,
       });
 
@@ -303,8 +350,9 @@ export const MainLayout: React.FC = () => {
         }
 
         // 处理连通域中心点，自动移动ROI
-        if (response.data.connected_component_center && currentROI) {
+        if (response.data.connected_component_center && currentROIRef.current) {
           const center = response.data.connected_component_center;
+          const currentROI = currentROIRef.current;
           console.log('🎯 检测到连通域中心点:', center);
           console.log('📍 当前ROI:', currentROI);
 
@@ -363,8 +411,11 @@ export const MainLayout: React.FC = () => {
       setError('分析失败: ' + (err as Error).message);
       setAnalysisState(prev => ({ ...prev, isAnalyzing: false }));
       return null;
+    } finally {
+      // Always reset running state
+      isAnalysisRunningRef.current = false;
     }
-  }, [currentVideo, currentROI, segmentationModel, enhancedCVParams, simpleCenterParams, ellipticalMorphParams, displayState.confidenceThreshold, roiControlState.selectedPoint, apiClient]);
+  }, []); // Remove all dynamic dependencies to prevent function recreation
 
   // Keyboard shortcuts
   useKeyboardShortcuts([
@@ -397,9 +448,134 @@ export const MainLayout: React.FC = () => {
   const displayedTotalFrames = currentVideo ? Math.max(1, Math.floor(currentVideo.frameCount / frameStep)) : 0;
   const timeAxisProgress = displayedTotalFrames > 1 ? (currentFrame / (displayedTotalFrames - 1)) * 100 : 0;
 
+  // Helper functions
+  const showSuccess = useCallback((message: string) => {
+    setSuccess(message);
+    // 3秒后自动清除成功消息
+    setTimeout(() => setSuccess(null), 3000);
+  }, []);
+
+  // Auto analysis control functions
+  const pauseAutoAnalysis = useCallback(() => {
+    if (autoAnalysisState !== 'running') return;
+
+    console.log('⏸️ 暂停自动分析...');
+    if (autoAnalysisController) {
+      autoAnalysisController.abort();
+    }
+    setAutoAnalysisState('paused');
+    setIsAutoAnalyzing(false);
+    setError('⏸️ 自动分析已暂停');
+  }, [autoAnalysisState, autoAnalysisController, showSuccess]);
+
+  const resumeAutoAnalysis = useCallback(async () => {
+    if (autoAnalysisState !== 'paused' || !savedROI) {
+      setError('❌ 无法恢复分析：缺少保存的状态');
+      return;
+    }
+
+    console.log('▶️ 恢复自动分析...');
+    setAutoAnalysisState('running');
+    setIsAutoAnalyzing(true);
+    setError('▶️ 正在恢复自动分析...');
+
+    try {
+      const controller = new AbortController();
+      setAutoAnalysisController(controller);
+
+      let completedFrames = autoAnalysisCompletedFrames;
+      let currentROICopy = { ...savedROI };
+      const startFrame = savedCurrentFrame;
+
+      for (let i = completedFrames; i < autoAnalysisFrames; i++) {
+        // 检查是否被中断
+        if (controller.signal.aborted) {
+          console.log('🛑 分析被中断');
+          break;
+        }
+
+        const targetFrame = startFrame + 1 + (i - completedFrames);
+        if (targetFrame >= displayedTotalFrames) {
+          showSuccess(`✅ 已到达视频末尾，完成 ${completedFrames} 帧分析`);
+          break;
+        }
+
+        // 更新进度
+        setAutoAnalysisProgress((i / autoAnalysisFrames) * 100);
+        setAutoAnalysisCompletedFrames(i);
+
+        // 移动到目标帧
+        console.log(`🔄 恢复分析第 ${i + 1}/${autoAnalysisFrames} 帧: 移动到帧 ${targetFrame}`);
+        setCurrentFrame(targetFrame);
+
+        // 等待一帧以确保帧加载完成
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // 执行分析并获取最新的连通域中心点
+        console.log(`🔍 执行帧 ${targetFrame} 的分析...`);
+        console.log(`📐 使用的ROI: (${currentROICopy.x}, ${currentROICopy.y}), 大小: ${currentROICopy.width}x${currentROICopy.height}`);
+        const latestCenterPoint = await startAnalysis(currentROICopy);
+
+        // 使用返回的中心点移动ROI
+        if (latestCenterPoint) {
+          const absCenterX = currentROICopy.x + latestCenterPoint.x;
+          const absCenterY = currentROICopy.y + latestCenterPoint.y;
+
+          const canvasWidth = frameCanvasRef.current?.width || 800;
+          const canvasHeight = frameCanvasRef.current?.height || 600;
+
+          const newROI: ROI = {
+            id: `roi-${Date.now()}`,
+            frameIndex: targetFrame,
+            x: Math.max(0, Math.min(absCenterX - currentROICopy.width / 2, canvasWidth - currentROICopy.width)),
+            y: Math.max(0, Math.min(absCenterY - currentROICopy.height / 2, canvasHeight - currentROICopy.height)),
+            width: currentROICopy.width,
+            height: currentROICopy.height,
+          };
+
+          console.log(`📊 帧 ${targetFrame}: ROI从 (${currentROICopy.x}, ${currentROICopy.y}) 移动到 (${newROI.x}, ${newROI.y})`);
+          currentROICopy = newROI;
+          setSavedROI(newROI); // 更新保存的状态
+          setCurrentROI(newROI); // 更新当前状态
+        }
+
+        setSavedCurrentFrame(targetFrame);
+
+        // 等待分析完成
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+
+      setError(`✅ 自动分析完成！成功处理了 ${autoAnalysisCompletedFrames} 帧`);
+      resetAutoAnalysisState();
+    } catch (error) {
+      console.error('恢复自动分析过程中发生错误:', error);
+      setError('❌ 恢复自动分析过程中发生错误');
+      setAutoAnalysisState('paused');
+    }
+  }, [autoAnalysisState, savedROI, savedCurrentFrame, autoAnalysisCompletedFrames, autoAnalysisFrames, showSuccess]);
+
+  const stopAutoAnalysis = useCallback(() => {
+    console.log('🛑 停止自动分析');
+    if (autoAnalysisController) {
+      autoAnalysisController.abort();
+    }
+    resetAutoAnalysisState();
+    setError('🛑 自动分析已停止');
+  }, [autoAnalysisController, showSuccess]);
+
+  const resetAutoAnalysisState = useCallback(() => {
+    setAutoAnalysisState('idle');
+    setAutoAnalysisProgress(0);
+    setAutoAnalysisCompletedFrames(0);
+    setAutoAnalysisController(null);
+    setSavedROI(null);
+    setSavedCurrentFrame(0);
+    setIsAutoAnalyzing(false);
+  }, []);
+
   // Event handlers
   const startAutoAnalysis = useCallback(async () => {
-    if (isAutoAnalyzing) {
+    if (autoAnalysisState === 'running') {
       setError('自动分析进行中，请稍候');
       return;
     }
@@ -408,20 +584,48 @@ export const MainLayout: React.FC = () => {
       return;
     }
 
+    // 如果是从暂停状态恢复
+    if (autoAnalysisState === 'paused') {
+      await resumeAutoAnalysis();
+      return;
+    }
+
+    // 开始新的自动分析
+    console.log('🚀 开始新的自动分析...');
+    setAutoAnalysisState('running');
     setIsAutoAnalyzing(true);
-    setError(`开始自动分析 ${autoAnalysisFrames} 帧...`);
+    setError(`🚀 开始自动分析 ${autoAnalysisFrames} 帧...`);
+    setAutoAnalysisProgress(0);
+    setAutoAnalysisCompletedFrames(0);
 
     try {
+      const controller = new AbortController();
+      setAutoAnalysisController(controller);
+
       let completedFrames = 0;
       // 创建当前ROI的引用副本，避免闭包问题
       let currentROICopy = { ...currentROI };
 
+      // 保存初始状态
+      setSavedROI(currentROICopy);
+      setSavedCurrentFrame(currentFrame);
+
       for (let i = 0; i < autoAnalysisFrames; i++) {
-        const targetFrame = currentFrame + 1 + i;
-        if (targetFrame >= displayedTotalFrames) {
-          setError(`已到达视频末尾，完成 ${completedFrames} 帧分析`);
+        // 检查是否被中断
+        if (controller.signal.aborted) {
+          console.log('🛑 分析被中断');
           break;
         }
+
+        const targetFrame = currentFrame + 1 + i;
+        if (targetFrame >= displayedTotalFrames) {
+          showSuccess(`✅ 已到达视频末尾，完成 ${completedFrames} 帧分析`);
+          break;
+        }
+
+        // 更新进度
+        setAutoAnalysisProgress((i / autoAnalysisFrames) * 100);
+        setAutoAnalysisCompletedFrames(i + 1);
 
         // 移动到目标帧
         console.log(`🔄 自动分析第 ${i + 1}/${autoAnalysisFrames} 帧: 移动到帧 ${targetFrame}`);
@@ -458,27 +662,29 @@ export const MainLayout: React.FC = () => {
           console.log(`📊 帧 ${targetFrame}: 连通域中心点图像绝对坐标(${absCenterX}, ${absCenterY})`);
           console.log(`📊 帧 ${targetFrame}: ROI从 (${currentROICopy.x}, ${currentROICopy.y}) 移动到 (${newROI.x}, ${newROI.y})`);
           currentROICopy = newROI; // 更新副本
+          setSavedROI(newROI); // 更新保存的状态
           setCurrentROI(newROI); // 更新状态
         } else {
           console.log(`⚠️ 帧 ${targetFrame}: 未检测到连通域中心点（mask为空），ROI保持不变`);
         }
 
         completedFrames++;
+        setSavedCurrentFrame(targetFrame);
 
         // 等待分析完成
         await new Promise(resolve => setTimeout(resolve, 200));
       }
 
-      setError(`✅ 自动分析完成！成功处理了 ${completedFrames} 帧，ROI已根据静脉中心点进行跟踪`);
+      if (autoAnalysisState === 'running') {
+        showSuccess(`✅ 自动分析完成！成功处理了 ${completedFrames} 帧，ROI已根据静脉中心点进行跟踪`);
+        resetAutoAnalysisState();
+      }
     } catch (error) {
       console.error('自动分析过程中发生错误:', error);
-      setError('自动分析过程中发生错误');
-    } finally {
-      setIsAutoAnalyzing(false);
-      // 3秒后清除消息
-      setTimeout(() => setError(null), 3000);
+      setError('❌ 自动分析过程中发生错误');
+      setAutoAnalysisState('paused');
     }
-  }, [currentVideo, currentROI, currentFrame, displayedTotalFrames, autoAnalysisFrames, isAutoAnalyzing, startAnalysis]);
+  }, [currentVideo, currentROI, currentFrame, displayedTotalFrames, autoAnalysisFrames, isAutoAnalyzing, startAnalysis, autoAnalysisState, resumeAutoAnalysis, resetAutoAnalysisState, showSuccess]);
 
   const handleMouseDown = useCallback(() => {
     setIsResizing(true);
@@ -551,6 +757,7 @@ export const MainLayout: React.FC = () => {
           showSegmentationOverlay={displayState.showSegmentationOverlay}
           showSettingsPanel={displayState.showSettingsPanel}
           error={error}
+          success={success}
           onFileUpload={handleFileUpload}
           onModelChange={setSegmentationModel}
           // 注意：这里包一层，避免 React 把点击事件作为参数传给 startAnalysis
@@ -565,8 +772,14 @@ export const MainLayout: React.FC = () => {
         displayedTotalFrames={displayedTotalFrames}
         autoAnalysisFrames={autoAnalysisFrames}
         isAutoAnalyzing={isAutoAnalyzing}
+        autoAnalysisState={autoAnalysisState}
+        autoAnalysisProgress={autoAnalysisProgress}
+        autoAnalysisCompletedFrames={autoAnalysisCompletedFrames}
         onAutoAnalysisFramesChange={setAutoAnalysisFrames}
         onStartAutoAnalysis={() => { void startAutoAnalysis(); }}
+        onPauseAutoAnalysis={() => { void pauseAutoAnalysis(); }}
+        onResumeAutoAnalysis={() => { void resumeAutoAnalysis(); }}
+        onStopAutoAnalysis={() => { void stopAutoAnalysis(); }}
       />
 
       <div className="flex-1 flex overflow-hidden">

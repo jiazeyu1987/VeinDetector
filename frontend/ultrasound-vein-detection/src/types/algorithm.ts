@@ -82,6 +82,16 @@ export type AnalysisState = {
   autoThresholdEnabled: boolean;
 };
 
+export type AutoAnalysisState = 'idle' | 'running' | 'paused';
+
+export type AutoAnalysisControl = {
+  state: AutoAnalysisState;
+  progress: number;
+  completedFrames: number;
+  totalFrames: number;
+  currentFrame: number;
+};
+
 export type DisplayState = {
   showSegmentationOverlay: boolean;
   showCenterPoints: boolean;
