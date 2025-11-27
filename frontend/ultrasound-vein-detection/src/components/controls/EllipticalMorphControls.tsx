@@ -264,6 +264,44 @@ export const EllipticalMorphControls: React.FC<EllipticalMorphControlsProps> = (
               )}
             </div>
 
+            {/* 直接显示原始mask + ROI中心点连通域检测 */}
+            <div className={`p-3 rounded-lg border transition-all duration-200 ${
+              params.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER
+                ? 'bg-yellow-800 bg-opacity-40 border-yellow-500 shadow-lg'
+                : 'bg-gray-800 border-gray-600 hover:bg-gray-750'
+            }`}>
+              <label className="flex items-center justify-between cursor-pointer">
+                <div className="flex items-center space-x-3">
+                  <input
+                    type="radio"
+                    name="processingMode"
+                    checked={params.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER}
+                    onChange={() => handleProcessingModeChange(ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER)}
+                    className="w-4 h-4 text-yellow-600 bg-gray-700 border-gray-600 focus:ring-yellow-500 focus:ring-2"
+                  />
+                  <div>
+                    <span className="text-sm font-medium">🎯 直接显示原始mask + ROI中心点筛选</span>
+                    <div className="text-xs text-gray-400">在原始mask基础上筛选ROI中心区域</div>
+                  </div>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded ${
+                  params.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER
+                    ? 'bg-yellow-600 text-white'
+                    : 'bg-gray-600 text-gray-300'
+                }`}>
+                  {params.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER ? '已选择' : '可选'}
+                </span>
+              </label>
+              {params.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER && (
+                <div className="text-xs text-yellow-300 mt-2 ml-7">
+                  • 先进行阈值分割得到原始mask<br/>
+                  • 然后筛选出ROI中心点所在的连通域<br/>
+                  • 以原始mask格式显示最终结果<br/>
+                  • 无形态学处理，保持原始特征
+                </div>
+              )}
+            </div>
+
             {/* 选中点连通域检测 */}
             <div className={`p-3 rounded-lg border transition-all duration-200 ${
               params.processingMode === ProcessingMode.SELECTED_POINT_CONNECTED

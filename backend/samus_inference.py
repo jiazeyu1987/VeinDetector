@@ -747,6 +747,9 @@ class EllipticalMorphSegmentor:
                 not selected_point_connected_component_enabled
             )
 
+            # 标志变量，跟踪是否已经设置了processed变量
+            processed_set = False
+
             if max_connected_component_enabled:
                 # 最大连通区域模式：直接使用原始图像，避免预处理导致的区域连接
                 logger.info(f"EllipticalMorph: Direct thresholding for max connected component (connectivity=4)")
@@ -759,23 +762,23 @@ class EllipticalMorphSegmentor:
                 threshold_pixels = (mask > 0).sum()
                 logger.info(f"Threshold分割结果：{threshold_pixels}像素在阈值范围内")
 
-                # 检查是否启用直接显示原始mask
-                if direct_raw_mask_display:
-                    # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
-                    full_mask = np.zeros((height, width), dtype=np.uint8)
-                    full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
-                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
-                    return full_mask
+                # 注意：不再在此处提前返回，即使启用direct_raw_mask_display也要继续进行连通域分析
+                # direct_raw_mask_display将在最后阶段处理，决定是否跳过形态学操作
 
-                # 轻微的形态学操作确保区域分离
-                kernel_small = np.ones((2, 2), np.uint8)
-                mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small, iterations=1)
+                # 根据direct_raw_mask_display参数决定是否进行形态学操作
+                if not direct_raw_mask_display:
+                    # 轻微的形态学操作确保区域分离
+                    kernel_small = np.ones((2, 2), np.uint8)
+                    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_small, iterations=1)
 
-                # 调试：显示形态学操作后的结果
-                morph_pixels = (mask > 0).sum()
-                logger.info(f"形态学操作后：{morph_pixels}像素（减少了{threshold_pixels - morph_pixels}像素）")
+                    # 调试：显示形态学操作后的结果
+                    morph_pixels = (mask > 0).sum()
+                    logger.info(f"形态学操作后：{morph_pixels}像素（减少了{threshold_pixels - morph_pixels}像素）")
+                else:
+                    logger.info(f"直接显示原始mask模式：跳过形态学操作，保持{threshold_pixels}原始阈值像素")
 
                 processed = mask.copy()
+                processed_set = True
             else:
                 # 常规模式：根据过滤选项和预处理参数决定处理流程
                 if all_filters_disabled and not preprocessing_enabled:
@@ -787,16 +790,16 @@ class EllipticalMorphSegmentor:
                     threshold_pixels = (mask > 0).sum()
                     logger.info(f"EllipticalMorph: Pure threshold segmentation - {threshold_pixels} pixels in range [{threshold_min}, {threshold_max}]")
 
-                    # 检查是否启用直接显示原始mask
-                    if direct_raw_mask_display:
-                        # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
-                        full_mask = np.zeros((height, width), dtype=np.uint8)
-                        full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
-                        logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
-                        return full_mask
+                    # 注意：不再在此处提前返回，即使启用direct_raw_mask_display也要继续进行连通域分析
+                    # 直接返回结果，继续进行连通域分析（如果启用了的话）
+                    logger.info(f"纯阈值分割模式：{threshold_pixels}像素，继续进行连通域分析（如果启用）")
 
-                    # 直接返回结果，跳过所有连通域分析
-                    return mask
+                    # 设置processed为mask，准备进行连通域分析
+                    processed = mask.copy()
+                    processed_set = True
+
+                    # 跳过其他处理路径，直接进入连通域分析阶段
+                    # 但需要确保后续的连通域分析能够正确执行
 
                 elif preprocessing_enabled:
                     # 第一步：预处理
@@ -818,20 +821,20 @@ class EllipticalMorphSegmentor:
                     logger.info("EllipticalMorph: Direct thresholding without preprocessing")
                     logger.info(f"  阈值范围: [{threshold_min}, {threshold_max}]")
 
-                # 检查是否启用直接显示原始mask
-                if direct_raw_mask_display:
-                    # 创建绝对坐标的mask，将ROI相对坐标转换为图像绝对坐标
-                    full_mask = np.zeros((height, width), dtype=np.uint8)
-                    full_mask[y1:y2, x1:x2] = mask  # 将ROI mask放置到正确的绝对位置
-                    threshold_pixels = (mask > 0).sum()
-                    logger.info(f"EllipticalMorph: Direct raw mask display enabled - returning {threshold_pixels} raw threshold pixels at absolute coordinates [{x1}:{x2}, {y1}:{y2}]")
-                    return full_mask
-
-                # 第三步：纯阈值分割，不进行任何形态学操作
-                processed = mask.copy()
+                # 注意：不再在此处提前返回，即使启用direct_raw_mask_display也要继续进行连通域分析
+                # 根据direct_raw_mask_display参数决定是否进行形态学操作
+                if not direct_raw_mask_display:
+                    # 第三步：纯阈值分割后的形态学操作
+                    # 可以在这里添加轻微的形态学操作，但在组合模式下可能需要跳过
+                    processed = mask.copy()
+                    processed_set = True
+                else:
+                    logger.info(f"直接显示原始mask模式：跳过形态学操作，保持原始阈值结果")
+                    processed = mask.copy()
+                    processed_set = True
 
             # 第四步：连通域分析和筛选
-            if max_connected_component_enabled or roi_center_connected_component_enabled or selected_point_connected_component_enabled:
+            if processed_set and (max_connected_component_enabled or roi_center_connected_component_enabled or selected_point_connected_component_enabled):
                 # 连通域检测模式：使用连通组件分析
                 if (processed > 0).sum() > 0:
                     # 使用连通组件分析（4连通：只有上下左右相连）
@@ -920,14 +923,26 @@ class EllipticalMorphSegmentor:
                     mask_roi = processed.copy()
                     kept_contours = "empty"
             else:
-                # 保留所有连通区域，不进行过滤
-                mask_roi = processed.copy()
+                # 没有进行连通域分析，直接使用processed（如果存在）或mask
+                if processed_set:
+                    mask_roi = processed.copy()
+                    kept_contours = (mask_roi > 0).sum()
+                    logger.info(f"EllipticalMorph: No connected component filtering, using processed mask with {kept_contours} pixels")
+                else:
+                    # 如果没有processed变量，创建阈值分割的mask
+                    mask_roi = np.zeros_like(roi_img, dtype=np.uint8)
+                    mask_roi[(roi_img >= threshold_min) & (roi_img <= threshold_max)] = 255
+                    kept_contours = (mask_roi > 0).sum()
+                    logger.info(f"EllipticalMorph: No processed mask available, created threshold mask with {kept_contours} pixels")
+
+            if not isinstance(kept_contours, (int, float)):
+                # 如果kept_contours是字符串（如"empty"），计算实际像素数
                 kept_contours = (mask_roi > 0).sum()
 
             logger.info(
-                "EllipticalMorph kept %s pixels after filtering, max_connected_component=%s",
+                "EllipticalMorph kept %s pixels after processing, direct_raw_mask_display=%s",
                 int(kept_contours),
-                max_connected_component_enabled,
+                direct_raw_mask_display,
             )
 
             # 转换为二进制掩码

@@ -273,10 +273,10 @@ export const MainLayout: React.FC = () => {
           clahe_tile_grid_size: ellipticalMorphParams.claheTileGridSize,
           // 根据processingMode设置相应的后端参数
           preprocessing_enabled: ellipticalMorphParams.processingMode === ProcessingMode.IMAGE_PREPROCESSING ? 1 : 0,
-          direct_raw_mask_display: ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK ? 1 : 0,
+          direct_raw_mask_display: (ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER) ? 1 : 0,
           elliptical_constraint_enabled: ellipticalMorphParams.ellipticalConstraintEnabled ? 1 : 0,
           max_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.MAX_CONNECTED_COMPONENT ? 1 : 0,
-          roi_center_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.ROI_CENTER_CONNECTED ? 1 : 0,
+          roi_center_connected_component_enabled: (ellipticalMorphParams.processingMode === ProcessingMode.ROI_CENTER_CONNECTED || ellipticalMorphParams.processingMode === ProcessingMode.DIRECT_RAW_MASK_WITH_ROI_CENTER) ? 1 : 0,
           selected_point_connected_component_enabled: ellipticalMorphParams.processingMode === ProcessingMode.SELECTED_POINT_CONNECTED ? 1 : 0,
           selected_point_x: roiControlState.selectedPoint?.x || 0,
           selected_point_y: roiControlState.selectedPoint?.y || 0,

@@ -1,12 +1,13 @@
 // Algorithm parameter types for vein detection
 
-// 处理模式枚举 - 五种互斥的处理模式
+// 处理模式枚举 - 六种处理模式（包括组合模式）
 export enum ProcessingMode {
   DIRECT_RAW_MASK = 'direct_raw_mask',          // 直接显示原始mask
   IMAGE_PREPROCESSING = 'image_preprocessing',   // 图像预处理
   MAX_CONNECTED_COMPONENT = 'max_connected_component',  // 最大连通区域检测
   ROI_CENTER_CONNECTED = 'roi_center_connected',  // ROI中心点连通域检测
-  SELECTED_POINT_CONNECTED = 'selected_point_connected'  // 选中点连通域检测
+  SELECTED_POINT_CONNECTED = 'selected_point_connected',  // 选中点连通域检测
+  DIRECT_RAW_MASK_WITH_ROI_CENTER = 'direct_raw_mask_with_roi_center'  // 直接显示原始mask + ROI中心点连通域检测
 }
 
 export type EnhancedCVParams = {
